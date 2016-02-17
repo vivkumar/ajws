@@ -1,0 +1,24 @@
+/*
+ * Author: Vivek Kumar
+ * http://vivkumar.github.io/
+ */
+
+This directory contain simple examples that uses AJWS's data-centric annotations and TryCatchWS work-stealing
+
+======
+USAGE:
+======
+
+(a) Translating AJWS to Java
+cd ../../AJWS
+ant clean; ant jar      // Build AJWS.jar
+java -classpath . JavaPrettyPrinter ../test/misc/NQueens.java &> AJWStoJava.java
+(b) Copy AJWS dependencies
+cp -rf lib/ajws ../test/misc/.
+(c) Compile the translated code
+cd ../test/misc/
+javac -classpath /path/to/JikesRVM/build/for/TryCatchWS/jksvm.jar:. AJWStoJava.java
+/path/to/JikesRVM/build/for/TryCatchWS/rvm -Xws:procs=2 -Xws:autoThreads=true AJWStoJava
+(For downloading/building a copy of TryCatchWS, please visit: http://vivkumar.github.io/javatrycatchws.html )
+
+

@@ -1,0 +1,381 @@
+aspect NonNullEmit {
+  class Input {
+    java.io.FileReader r;
+    int line;
+    int column;
+
+    private boolean ready = false;
+    private int value;
+    private int read() throws java.io.IOException {
+      if(ready) {
+        ready = false;
+        return value;
+      }
+      return r.read();
+    }
+    public int peek() throws java.io.IOException {
+      if(ready)
+        return value;
+      value = r.read();
+      ready = true;
+      return value;
+    }
+
+    public Input(String fileName) throws java.io.IOException {
+      r = new java.io.FileReader(fileName);
+      line = 1;
+      column = 1;
+    }
+
+    private void detectNextLine(int c, int previous) {
+      if(c == 0x0a) { // LF
+        if(previous != 0x0d)
+          this.line++;
+        this.column = 1;
+      }
+      else if(c == 0x0d) { // CR
+        this.line++;
+        this.column = 1;
+      }
+      else if(c == 0x85) { // NEL
+        this.line++;
+        this.column = 1;
+      }
+      else if(c == 0x0c) { // FF
+        this.line++;
+        this.column = 1;
+      }
+      else if(c == 0x2028) { // LS
+        this.line++;
+        this.column = 1;
+      }
+      else if(c == 0x2029) { // PS
+        this.line++;
+        this.column = 1;
+      }
+    }
+
+    public void emitUntil(int line, int column, java.io.PrintWriter w) throws java.io.IOException {
+      if(line == 0 || column == 0)
+        return;
+      l: while(this.line < line || this.column < column) {
+        int previous = 0;
+        while(this.line < line) {
+          int c = read();
+          if(c == -1)
+            break l;
+          w.write((char)c);
+          detectNextLine(c, previous);
+          previous = c;
+        }
+        while(this.column < column) {
+          int c = read();
+          if(c == -1)
+            break l;
+          w.write(c);
+          this.column++;
+        }
+      }
+    }
+    public void skipUntil(int line, int column, java.io.PrintWriter w) throws java.io.IOException {
+      if(line == 0 || column == 0)
+        return;
+      l: while(this.line < line || this.column < column) {
+        int previous = 0;
+        while(this.line < line) {
+          int c = read();
+          if(c == -1)
+            break l;
+          detectNextLine(c, previous);
+          previous = c;
+        }
+        while(this.column < column) {
+          int c = read();
+          if(c == -1)
+            break l;
+          this.column++;
+        }
+      }
+    }
+    public void emitUntil(char stop, java.io.PrintWriter w) throws java.io.IOException {
+      int previous = 0;
+      while(true) {
+        int c = read();
+        if(c == -1)
+          break;
+        w.write((char)c);
+        detectNextLine(c, previous);
+        previous = c;
+        if(c == stop)
+          return;
+      }
+    }
+    public void close() throws java.io.IOException {
+      r.close();
+    }
+  }
+
+  public void Program.emit() {
+    String destinationPath = options().getValueForOption("-d");
+    for(Iterator iter = compilationUnitIterator(); iter.hasNext(); ) {
+      CompilationUnit unit = (CompilationUnit)iter.next();
+      if(unit.canBeAnnotated()) {
+        String fileName = unit.pathName();
+        String destinationName = destinationPath + java.io.File.separator + unit.relativeName();
+        System.out.println("Writing " + destinationName);
+        try {
+          Input input = new Input(fileName);
+          new java.io.File(destinationName).getParentFile().mkdirs();
+          java.io.PrintWriter w = new java.io.PrintWriter(new java.io.FileWriter(destinationName));
+          unit.emit(w, input);
+          int line = getLine(unit.getEnd());
+          int column = getColumn(unit.getEnd());
+          input.emitUntil(line+1, column, w);
+          input.close();
+          w.close();
+        } catch(IOException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+
+  public void Program.emitTest() {
+    for(Iterator iter = compilationUnitIterator(); iter.hasNext(); ) {
+      CompilationUnit unit = (CompilationUnit)iter.next();
+      if(unit.canBeAnnotated()) {
+        String fileName = unit.pathName();
+        try {
+          Input input = new Input(fileName);
+          java.io.PrintWriter w = new java.io.PrintWriter(System.out);
+          unit.emit(w, input);
+          int line = getLine(unit.getEnd());
+          int column = getColumn(unit.getEnd());
+          input.emitUntil(line+1, column, w);
+          w.close();
+          input.close();
+        } catch(IOException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+
+  public void ASTNode.emit(PrintWriter p, Input input) throws java.io.IOException {
+    if(this instanceof NonNullAnnotated) {
+      NonNullAnnotated a = (NonNullAnnotated)this;
+      int line = getLine(getStart());
+      int column = getColumn(getStart());
+      if(line != 0 && column != 0) {
+        input.emitUntil(line, column, p);
+        a.emitAnnotations(p);
+      }
+    }
+    for(int i = 0; i < getNumChild(); i++) {
+      getChild(i).emit(p, input);
+    }
+  }
+
+  public void CompilationUnit.emit(PrintWriter p, Input input) throws java.io.IOException {
+    if(options().hasValueForOption("-import") && getNumTypeDecl() > 0) {
+      String importString = "import " + options().getValueForOption("-import") + ";";
+      boolean found = false;
+      for(int i = 0; i < getNumImportDecl() && !found; i++)
+        if(getImportDecl(i).toString().equals(importString))
+          found = true;
+      if(!found) {
+        int line = getLine(getImportDeclList().getEnd());
+        int column = getColumn(getImportDeclList().getEnd());
+        if(line != 0 && column != 0) {
+          line += 1;
+          column = 1;
+          input.emitUntil(line, column, p);
+          p.println(importString);
+        }
+        else {
+          input.emitUntil(';', p);
+          input.emitUntil(input.line + 1, 1, p);
+          p.println("\n" + importString);
+        }
+        getTypeDeclList().emit(p, input);
+        return;
+      }
+    }
+    super.emit(p, input);
+  }
+
+  interface NonNullAnnotated {
+    void emitAnnotations(java.io.PrintWriter p);
+  }
+  ParameterDeclaration implements NonNullAnnotated;
+  VariableDeclaration implements NonNullAnnotated;
+  FieldDeclaration implements NonNullAnnotated;
+  MethodDecl implements NonNullAnnotated;
+
+  ClassDecl implements NonNullAnnotated;
+  InterfaceDecl implements NonNullAnnotated;
+
+  CompilationUnit implements NonNullAnnotated;
+
+  public void CompilationUnit.emitAnnotations(java.io.PrintWriter p) {
+    if(options().defaultNonNull() && relativeName().endsWith("package-info.java"))
+      p.write(options().nonNullAnnotation());
+  }
+  public void AnnotatedCompilationUnit.emitAnnotations(java.io.PrintWriter p) {
+    if(options().defaultNonNull() && !getModifiers().explicitNotNull())
+      p.write(options().nonNullAnnotation());
+  }
+
+  public void ClassDecl.emitAnnotations(java.io.PrintWriter p) {
+    if(isTopLevelType() && options().defaultNonNull() && !getModifiers().explicitNotNull() && 
+      ((Program)compilationUnit().getParent().getParent()).getPackageInfo(packageName()) == null)
+      p.write(options().nonNullAnnotation());
+  }
+  public void InterfaceDecl.emitAnnotations(java.io.PrintWriter p) {
+    if(isTopLevelType() && options().defaultNonNull() && !getModifiers().explicitNotNull() &&
+      ((Program)compilationUnit().getParent().getParent()).getPackageInfo(packageName()) == null)
+      p.write(options().nonNullAnnotation());
+  }
+
+  public void ParameterDeclaration.emitAnnotations(java.io.PrintWriter p) {
+    if(addNonNull() && !getModifiers().explicitNotNull())
+      p.write(options().nonNullAnnotation());
+    if(addNullable() && !getModifiers().explicitNullable())
+      p.write(options().nullableAnnotation());
+    if(inferedRaw() && !getModifiers().isRawObjectType())
+      p.write(options().rawAnnotation());
+  }
+
+  public void VariableDeclaration.emitAnnotations(java.io.PrintWriter p) {
+    if(firstVariable() == this) {
+      if(addNonNull() && !getModifiers().explicitNotNull())
+        p.write(options().nonNullAnnotation());
+      if(addNullable() && !getModifiers().explicitNullable())
+        p.write(options().nullableAnnotation());
+      if(inferedRaw() && !getModifiers().isRawObjectType())
+        p.write(options().rawAnnotation());
+    }
+  }
+
+  public void FieldDeclaration.emitAnnotations(java.io.PrintWriter p) {
+    if(firstVariable() == this) {
+      if(addNonNull() && !getModifiers().explicitNotNull())
+        p.write(options().nonNullAnnotation());
+      if(addNullable() && !getModifiers().explicitNullable())
+        p.write(options().nullableAnnotation());
+      if(inferedRaw() && !getModifiers().isRawObjectType())
+        p.write(options().rawAnnotation());
+    }
+  }
+
+  public void MethodDecl.emitAnnotations(java.io.PrintWriter p) {
+    if(addNonNull() && !getModifiers().explicitNotNull())
+      p.write(options().nonNullAnnotation());
+    if(addNullable() && !getModifiers().explicitNullable())
+      p.write(options().nullableAnnotation());
+    if(inferedRaw() && !getModifiers().isRawObjectType())
+      p.write(options().rawAnnotation());
+    if(inferedRawThis() && !getModifiers().isRawThisObjectType())
+      p.write(options().rawThisAnnotation());
+  }
+
+  inh boolean Modifier.removeNullable();
+  inh boolean Modifier.removeNotNull();
+  eq ParameterDeclaration.getModifiers().removeNullable() = inferedNonNull();
+  eq ParameterDeclaration.getModifiers().removeNotNull() = !inferedNonNull();
+  eq VariableDeclaration.getModifiers().removeNullable() = inferedNonNull();
+  eq VariableDeclaration.getModifiers().removeNotNull() = !inferedNonNull();
+  eq FieldDeclaration.getModifiers().removeNullable() = inferedNonNull();
+  eq FieldDeclaration.getModifiers().removeNotNull() = !inferedNonNull();
+  eq MethodDecl.getModifiers().removeNullable() = inferedNonNull();
+  eq MethodDecl.getModifiers().removeNotNull() = !inferedNonNull();
+  eq TypeDecl.getModifiers().removeNotNull() = !options().defaultNonNull();
+  eq AnnotatedCompilationUnit.getModifiers().removeNotNull() = !options().defaultNonNull();
+  eq Program.getCompilationUnit().removeNullable() = false;
+  eq Program.getCompilationUnit().removeNotNull() =  false;
+
+  protected void Modifier.skipModifier(PrintWriter p, Input input) throws java.io.IOException {
+    int line = getLine(getStart());
+    int column = getColumn(getStart());
+    if(line != 0 && column != 0)
+      input.emitUntil(line, column, p);
+    int end = getEnd() + 1;
+    do {
+      line = getLine(end);
+      column = getColumn(end);
+      if(line != 0 && column != 0)
+        input.skipUntil(line, column, p);
+      end++;
+    } while(input.peek() == ' ');
+  }
+  public void Annotation.emit(PrintWriter p, Input input) throws java.io.IOException {
+    if(decl().name().equals("NonNull") && removeNotNull())
+      skipModifier(p, input);
+    else if(decl().name().equals("Nullable") && (removeNullable() || !options().defaultNonNull()))
+      skipModifier(p, input);
+    else
+      super.emit(p, input);
+  }
+  public void NotNullModifier.emit(PrintWriter p, Input input) throws java.io.IOException {
+    if(removeNotNull())
+      skipModifier(p, input);
+    else
+      super.emit(p, input);
+  }
+  public void NullableModifier.emit(PrintWriter p, Input input) throws java.io.IOException {
+    if(removeNullable() || !options().defaultNonNull())
+      skipModifier(p, input);
+    else
+      super.emit(p, input);
+  }
+
+
+  public String Options.nonNullAnnotation() {
+    if(hasOption("-legacysyntax"))
+      return "/*@NonNull*/ ";
+    else
+      return "@NonNull ";
+  }
+  public String Options.nullableAnnotation() {
+    if(hasOption("-legacysyntax"))
+      return "/*@Nullable*/ ";
+    else
+      return "@Nullable ";
+  }
+  public String Options.rawAnnotation() {
+    if(hasOption("-legacysyntax"))
+      return "/*@Raw*/ ";
+    else
+      return "@Raw ";
+  }
+  public String Options.rawThisAnnotation() {
+    if(hasOption("-legacysyntax"))
+      return "/*@RawThis*/ ";
+    else
+      return "@RawThis ";
+  }
+
+  public boolean Options.defaultNonNull() {
+    return hasOption("-defaultnonnull");
+  }
+
+  syn boolean ParameterDeclaration.addNonNull() =
+    !options().defaultNonNull() && inferedNonNull();
+  syn boolean VariableDeclaration.addNonNull() =
+    !options().defaultNonNull() && inferedNonNull();
+  syn boolean FieldDeclaration.addNonNull() =
+    !options().defaultNonNull() && inferedNonNull();
+  syn boolean MethodDecl.addNonNull() =
+    !options().defaultNonNull() && inferedNonNull();
+
+  syn boolean ParameterDeclaration.addNullable() =
+    options().defaultNonNull() && getModifiers().mayBeNotNull() && !inferedNonNull();
+  syn boolean VariableDeclaration.addNullable() =
+    options().defaultNonNull() && getModifiers().mayBeNotNull() && !inferedNonNull();
+  syn boolean FieldDeclaration.addNullable() =
+    options().defaultNonNull() && getModifiers().mayBeNotNull() && !inferedNonNull();
+  syn boolean MethodDecl.addNullable() =
+    options().defaultNonNull() && getModifiers().mayBeNotNull() && !inferedNonNull();
+  
+}
+

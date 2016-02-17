@@ -1,0 +1,648 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+// Divide-n-conquer for loop transformation. Idea borrowed from X10 langauge
+
+aspect DCForLocals {
+	/*
+	 * This file is to help capture the local variables accessed inside a 
+	 * for loop. This is required to generate the divide and conquer
+	 * style method corresponding to the for loop.
+	 *
+	 */
+
+	syn lazy java.util.ArrayList<VarAccess> Stmt.grabLocals();
+	// Default value if the child class does not override this method.
+    eq Stmt.grabLocals() = null;
+	
+	syn java.util.ArrayList<VarAccess> ForStmt.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		
+		// 1. Iterate the initStmts first
+		for(int k=0; k< getNumInitStmt(); k++) {
+			java.util.ArrayList<VarAccess> locals_initStmts = getInitStmt(k).grabLocals();
+			java.util.ArrayList<VarAccess> from = locals_initStmts;
+	       	if(from != null && from.size() > 0) {
+    	   		for(int i=0; i<from.size(); i++) {
+        			boolean add = true;
+        			VarAccess src = from.get(i);
+        			for(int j=0; j<locals.size(); j++) {
+        				if(locals.get(j).name().equals(src.name())) {
+        					add = false;
+	        				break;
+    	    			}
+        			} 	
+        			if(add) locals.add(src);
+       			}
+       		}
+		}
+		
+		// 2. Iterate the Conditions
+		if(hasCondition()) {
+			java.util.ArrayList<VarAccess> locals_conds = ((RelationalExpr)getCondition()).getRightOperand().grabLocals();
+			java.util.ArrayList<VarAccess> from = locals_conds;
+	       	if(from != null && from.size() > 0) {
+    	   		for(int i=0; i<from.size(); i++) {
+        			boolean add = true;
+        			VarAccess src = from.get(i);
+        			for(int j=0; j<locals.size(); j++) {
+        				if(locals.get(j).name().equals(src.name())) {
+        					add = false;
+	        				break;
+    	    			}
+        			} 	
+        			if(add) locals.add(src);
+       			}
+       		}
+       	}
+       	
+       	// 3. Iterate the updateStmts
+       	for(int k = 0; k < getNumUpdateStmt(); k++) {
+       		java.util.ArrayList<VarAccess> locals_updStmts = getUpdateStmt(k).grabLocals();
+       		java.util.ArrayList<VarAccess> from = locals_updStmts;
+	       	if(from != null && from.size() > 0) {
+    	   		for(int i=0; i<from.size(); i++) {
+        			boolean add = true;
+        			VarAccess src = from.get(i);
+        			for(int j=0; j<locals.size(); j++) {
+        				if(locals.get(j).name().equals(src.name())) {
+        					add = false;
+	        				break;
+    	    			}
+        			} 	
+        			if(add) locals.add(src);
+       			}
+       		}	
+       	}
+       	
+       	// 4. Iterate the blockStmt
+       	java.util.ArrayList<VarAccess> locals_blockStmt = getStmt().grabLocals();
+		java.util.ArrayList<VarAccess> from = locals_blockStmt;
+       	if(from != null && from.size() > 0) {
+   	   		for(int i=0; i<from.size(); i++) {
+       			boolean add = true;
+       			VarAccess src = from.get(i);
+       			for(int j=0; j<locals.size(); j++) {
+       				if(locals.get(j).name().equals(src.name())) {
+       					add = false;
+        				break;
+   	    			}
+       			} 	
+       			if(add) locals.add(src);
+       		}
+       	}
+       	
+       	// 5. Get the VariableDeclarations
+       	java.util.ArrayList<String> locals_varDecls = grabLocalDeclarations();
+       	
+       	// 6. Calculate (locals - locals_varDecls)
+       	java.util.ArrayList<VarAccess> locals_final = new java.util.ArrayList<VarAccess>(0);
+       	for(int i=0; i<locals.size(); i++) {
+			String currName = locals.get(i).name();
+			boolean add = true;
+			for(int j=0; j<locals_varDecls.size(); j++) {
+				if(currName.equals(locals_varDecls.get(j))) {
+					add = false;
+					break;
+				}
+			}
+			if(add) {
+				locals_final.add(locals.get(i));
+			}
+		}
+		// debugging only
+		if(false) {
+			if(locals != null && locals.size() > 0) {
+    			System.out.print("Line:"+sourceLineNumber()+" Locals = ");
+    			for(int j=0; j<locals.size(); j++) {
+					System.out.print(locals.get(j).type().typeName()+":"+locals.get(j).name()+", ");
+				}
+				System.out.println();
+			}
+		}
+		return locals_final;
+	}
+	
+	syn java.util.ArrayList<VarAccess> Block.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		for(int i=0; i<getNumStmt(); i++) {
+			java.util.ArrayList<VarAccess> stmt_locals = getStmt(i).grabLocals();
+			java.util.ArrayList<VarAccess> from = stmt_locals;
+	       	if(from != null && from.size() > 0) {
+    	   		for(int j=0; j<from.size(); j++) {
+        			boolean add = true;
+        			VarAccess src = from.get(j);
+        				for(int k=0; k<locals.size(); k++) {
+	        			if(locals.get(k).name().equals(src.name())) {
+    	    				add = false;
+        					break;
+        				}
+	        		} 	
+    	    		if(add) locals.add(src);
+       			}
+       		}		
+		}
+		return locals;
+	}
+	
+	syn java.util.ArrayList<VarAccess> IfStmt.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		java.util.ArrayList<VarAccess> locals_conds = getCondition().grabLocals(); 
+		java.util.ArrayList<VarAccess> locals_then = getThen().grabLocals();
+		java.util.ArrayList<VarAccess> locals_else = hasElse() ? getElse().grabLocals() : null;
+		
+       	java.util.ArrayList<VarAccess> from = locals_conds;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+       	
+       	from = locals_then;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+       	
+       	from = locals_else;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+       	return locals;
+	}
+	
+	syn java.util.ArrayList<VarAccess> ExprStmt.grabLocals() {
+		return getExpr().grabLocals();
+	}
+	
+	syn java.util.ArrayList<VarAccess> WhileStmt.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		java.util.ArrayList<VarAccess> locals_conds = getCondition().grabLocals(); 
+		java.util.ArrayList<VarAccess> locals_stmts = getStmt().grabLocals();
+		
+		java.util.ArrayList<VarAccess> from = locals_conds;
+       	if(from != null && from.size() > 0) {
+   	   		for(int i=0; i<from.size(); i++) {
+       			boolean add = true;
+       			VarAccess src = from.get(i);
+       			for(int j=0; j<locals.size(); j++) {
+       				if(locals.get(j).name().equals(src.name())) {
+       					add = false;
+        				break;
+   	    			}
+       			} 	
+       			if(add) locals.add(src);
+       		}
+       	}
+       	
+       	from = locals_stmts;
+       	if(from != null && from.size() > 0) {
+   	   		for(int i=0; i<from.size(); i++) {
+       			boolean add = true;
+       			VarAccess src = from.get(i);
+       			for(int j=0; j<locals.size(); j++) {
+       				if(locals.get(j).name().equals(src.name())) {
+       					add = false;
+        				break;
+   	    			}
+       			} 	
+       			if(add) locals.add(src);
+       		}
+       	}
+       	return locals;
+	}
+	
+	
+	//---------------------------------------------------------
+	
+	syn lazy java.util.ArrayList<VarAccess> Expr.grabLocals();
+	// Default value if the child class does not override this method.
+    eq Expr.grabLocals() = null;
+	
+	syn lazy java.util.ArrayList<VarAccess> Unary.grabLocals() {
+    	return getOperand().grabLocals();
+    }
+    
+    /*
+       java.util.ArrayList<VarAccess> from = locals_conds;
+       if(from != null && from.size() > 0) {
+       	for(int i=0; i<from.size(); i++) {
+        	boolean add = true;
+        	VarAccess src = from.get(i);
+        	for(int j=0; j<locals.size(); j++) {
+        		if(locals.get(j).name().equals(src.name())) {
+        			add = false;
+        			break;
+        		}
+        	} 	
+        	if(add) locals.add(src);
+       	}
+       }
+    */
+    
+    syn java.util.ArrayList<VarAccess> RelationalExpr.grabLocals() {
+    	java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		java.util.ArrayList<VarAccess> locals_left = getLeftOperand().grabLocals();
+		java.util.ArrayList<VarAccess> locals_right = getRightOperand().grabLocals();
+		
+       	java.util.ArrayList<VarAccess> from = locals_left;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+       	
+       	from = locals_right;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+       	return locals;
+    }
+    
+    syn lazy java.util.ArrayList<VarAccess> ParExpr.grabLocals() {
+    	return getExpr().grabLocals();
+    }
+    
+    syn lazy java.util.ArrayList<VarAccess> Binary.grabLocals() {
+    	return getLeftOperand().grabLocals();
+    }
+    
+	syn lazy java.util.ArrayList<VarAccess> VariableDeclaration.grabLocals() {
+    	if(hasInit()) return getInit().grabLocals();
+    	else return null;
+    }
+    
+    syn lazy java.util.ArrayList<VarAccess> AssignExpr.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		java.util.ArrayList<VarAccess> destLocals = getDest().grabLocals();
+		java.util.ArrayList<VarAccess> from = destLocals;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+		java.util.ArrayList<VarAccess> sourceLocals = getSource().grabLocals();
+		from = sourceLocals;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+		return locals;		
+    }
+    
+    syn lazy java.util.ArrayList<VarAccess> ArrayAccess.grabLocals() {
+		return getExpr().grabLocals();
+    }
+    
+    syn lazy java.util.ArrayList<VarAccess> ArithmeticExpr.grabLocals() {
+    	java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		java.util.ArrayList<VarAccess> destLocals = getLeftOperand().grabLocals();
+		java.util.ArrayList<VarAccess> from = destLocals;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+		java.util.ArrayList<VarAccess> sourceLocals = getRightOperand().grabLocals();
+		from = sourceLocals;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+		return locals;
+    }
+  
+    syn lazy java.util.ArrayList<VarAccess> AbstractDot.grabLocals() {
+    	java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+    	java.util.ArrayList<VarAccess> locals_left = getLeft().grabLocals();
+    	java.util.ArrayList<VarAccess> locals_right = null;
+    	if(getRight() instanceof MethodAccess) {
+    		locals_right = getRight().grabLocals();
+    	}
+    	java.util.ArrayList<VarAccess> from = locals_left;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+    	from = locals_right;
+       	if(from != null && from.size() > 0) {
+       		for(int i=0; i<from.size(); i++) {
+        		boolean add = true;
+        		VarAccess src = from.get(i);
+        		for(int j=0; j<locals.size(); j++) {
+        			if(locals.get(j).name().equals(src.name())) {
+        				add = false;
+        				break;
+        			}
+        		} 	
+        		if(add) locals.add(src);
+       		}
+       	}
+    	return locals;
+    }
+  
+	syn lazy java.util.ArrayList<VarAccess> VarAccess.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		locals.add(this);
+		return locals;
+    }
+
+	syn java.util.ArrayList<VarAccess> MethodAccess.grabLocals() {
+		java.util.ArrayList<VarAccess> locals = new java.util.ArrayList<VarAccess>(0);
+		for(int k = 0; k < getNumArg(); k++) {
+			java.util.ArrayList<VarAccess> arg_locals = getArg(k).grabLocals();
+			java.util.ArrayList<VarAccess> from = arg_locals;
+       		if(from != null && from.size() > 0) {
+       			for(int i=0; i<from.size(); i++) {
+        			boolean add = true;
+	        		VarAccess src = from.get(i);
+    	    		for(int j=0; j<locals.size(); j++) {
+        				if(locals.get(j).name().equals(src.name())) {
+        					add = false;
+        					break;
+	        			}
+    	    		} 	
+        			if(add) locals.add(src);
+	       		}
+    	   	}
+		}
+		return locals;
+	}
+	
+	/*
+	 *-------------------------------------------------------------------------------------
+	 * FIND THE LOCAL VARAIBLE DECLARATIONS INSIDE THE FOR STMT BLOCK
+	 *-------------------------------------------------------------------------------------
+	 */
+	
+	syn lazy java.util.ArrayList<String> Stmt.grabLocalDeclarations();
+	// Default value if the child class does not override this method.
+    eq Stmt.grabLocalDeclarations() = null;
+	
+	syn java.util.ArrayList<String> ForStmt.grabLocalDeclarations() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+		for(int i = 0; i < getNumInitStmt(); i++) {
+          VariableDeclaration v = (VariableDeclaration)getInitStmt(i);
+          if(!locals.contains(v.name())) locals.add(v.name());
+        }
+        java.util.ArrayList<String> locals_stmt = getStmt().grabLocalDeclarations();
+        if(locals_stmt != null && locals_stmt.size() > 0) {
+        	for(int i=0; i<locals_stmt.size(); i++) {
+        		if(!locals.contains(locals_stmt.get(i))) locals.add(locals_stmt.get(i));
+        	}
+        }
+        return locals;
+	}
+	
+	syn java.util.ArrayList<String> Block.grabLocalDeclarations() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+		for(int i=0; i<getNumStmt(); i++) {
+			java.util.ArrayList<String> stmt_locals = getStmt(i).grabLocalDeclarations();		
+			if(stmt_locals != null && stmt_locals.size() > 0) {
+				for(int j=0; j<stmt_locals.size(); j++) {
+					if(!locals.contains(stmt_locals.get(j))) locals.add(stmt_locals.get(j));
+				}			
+			}
+		}
+		return locals;
+	}
+	
+	syn java.util.ArrayList<String> ExprStmt.grabLocalDeclarations() {
+		return getExpr().grabLocalDeclarations();
+	}
+	
+	syn java.util.ArrayList<String> IfStmt.grabLocalDeclarations() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0)	;
+		java.util.ArrayList<String> locals_then = getThen().grabLocalDeclarations();
+		java.util.ArrayList<String> locals_else = hasElse() ? getElse().grabLocalDeclarations() : null;
+		
+		if(locals_then != null && locals_then.size() > 0) {
+			for(int j=0; j<locals_then.size(); j++) {
+				if(!locals.contains(locals_then.get(j))) locals.add(locals_then.get(j));
+			}			
+		}
+			
+		if(locals_else != null && locals_else.size() > 0) {
+			for(int j=0; j<locals_else.size(); j++) {
+				if(!locals.contains(locals_else.get(j))) locals.add(locals_else.get(j));
+			}			
+		}
+		
+		return locals;
+	}
+	
+	syn java.util.ArrayList<String> WhileStmt.grabLocalDeclarations() {
+		return getStmt().grabLocalDeclarations();
+	}
+	
+	syn java.util.ArrayList<String> DoStmt.grabLocalDeclarations() {
+		return getStmt().grabLocalDeclarations();
+	}
+	
+	syn java.util.ArrayList<String> SwitchStmt.grabLocalDeclarations() {
+		return getBlock().grabLocalDeclarations();
+	}
+	
+	//-----------------------EXPRs----------------------------------
+	
+	syn lazy java.util.ArrayList<String> Expr.grabLocalDeclarations();
+	// Default value if the child class does not override this method.
+    eq Expr.grabLocalDeclarations() = null;
+	
+	syn lazy java.util.ArrayList<String> VariableDeclaration.grabLocalDeclarations() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+		locals.add(name());
+		return locals;		
+    }
+    
+    /*
+	 *-------------------------------------------------------------------------------------
+	 * FIND THE LIST OF EXCEPTIONS THROWN FROM INSIDE THE FOR STMT BLOCK
+	 *-------------------------------------------------------------------------------------
+	 */
+	
+	syn lazy java.util.ArrayList<String> Stmt.grabExceptions();
+	// Default value if the child class does not override this method.
+    eq Stmt.grabExceptions() = null;
+	
+	syn java.util.ArrayList<String> ForStmt.grabExceptions() {
+		return getStmt().grabExceptions();
+	}
+	
+	syn java.util.ArrayList<String> Block.grabExceptions() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+		for(int i=0; i<getNumStmt(); i++) {
+			java.util.ArrayList<String> stmt_locals = getStmt(i).grabExceptions();		
+			if(stmt_locals != null && stmt_locals.size() > 0) {
+				for(int j=0; j<stmt_locals.size(); j++) {
+					if(!locals.contains(stmt_locals.get(j))) locals.add(stmt_locals.get(j));
+				}			
+			}
+		}
+		return locals;
+	}
+		
+	syn java.util.ArrayList<String> IfStmt.grabExceptions() {
+		java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+		java.util.ArrayList<String> locals_then = getThen().grabExceptions();
+		java.util.ArrayList<String> locals_else = hasElse() ? getElse().grabExceptions() : null;
+		if(locals_then != null && locals_then.size() > 0) {
+			for(int j=0; j<locals_then.size(); j++) {
+				if(!locals.contains(locals_then.get(j))) locals.add(locals_then.get(j));
+			}			
+		}
+		if(locals_else != null && locals_else.size() > 0) {
+			for(int j=0; j<locals_else.size(); j++) {
+				if(!locals.contains(locals_else.get(j))) locals.add(locals_else.get(j));
+			}			
+		}
+		return locals;
+	}
+	
+	syn java.util.ArrayList<String> WhileStmt.grabExceptions() {
+		return getStmt().grabExceptions();
+	}
+	
+	syn java.util.ArrayList<String> ExprStmt.grabExceptions() {
+		return getExpr().grabExceptions();
+	}
+	
+	//--------------------- EXPRs ------------------------------------
+	
+	syn lazy java.util.ArrayList<String> Expr.grabExceptions();
+	// Default value if the child class does not override this method.
+    eq Expr.grabExceptions() = null;
+ 
+ 	syn lazy java.util.ArrayList<String> ParExpr.grabExceptions() {
+    	return getExpr().grabExceptions();
+    }
+    
+	syn lazy java.util.ArrayList<String> VariableDeclaration.grabExceptions() {
+    	if(hasInit()) return getInit().grabExceptions();
+    	else return null;
+    }
+    
+    syn lazy java.util.ArrayList<String> AssignExpr.grabExceptions() {
+		return getSource().grabExceptions();   
+    }
+	
+	syn lazy java.util.ArrayList<String> ArithmeticExpr.grabExceptions() {
+		return getRightOperand().grabExceptions();
+	}
+	
+	syn lazy java.util.ArrayList<String> AbstractDot.grabExceptions() {
+    	return getRight().grabExceptions();
+    }
+    
+    syn lazy java.util.ArrayList<String> MethodAccess.grabExceptions() {
+    	MethodDecl method = decl();
+    	java.util.ArrayList<String> locals = new java.util.ArrayList<String>(0);
+    	for(int i=0; i<method.getNumException(); i++) {
+    		locals.add(method.getException(i).type().typeName());
+    	}
+    	return locals;
+    }
+}

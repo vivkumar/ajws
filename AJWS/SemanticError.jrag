@@ -1,0 +1,325 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect SemanticError {
+   refine NameCheck public void FieldDeclaration.nameCheck() {
+     super.nameCheck();
+     for(Iterator iter = hostType().memberFields(name()).iterator(); iter.hasNext(); ) {
+       Variable v = (Variable)iter.next();
+       if(v != this && v.hostType() == hostType())
+         error("field named " + name() + " is multiply declared in type " + hostType().typeName());
+     }
+     // Atomicset constraints
+     final String atomicType = getModifiers().getExactAtomicType();
+     if(atomicType != null) {
+       if(atomicType.contains(".") || atomicType.contains("]")) {
+         error("atomic type " + "atomicType" + " is not allowed on class field named " + name() + " in type " + hostType().typeName());
+       }
+       else if(atomicType.length() == 0) {
+         error("NULL type atomic type " + " @Atomic is not allowed on class field named " + name() + " in type " + hostType().typeName());
+       }
+       else {
+         // Throw error if the atomicset for this atomic type
+         // is not declared
+         boolean found = false;
+         for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+           AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+           if(decl.name().equals(atomicType)) {
+             found = true;
+             break;
+           }
+         }
+         if(!found) {
+           error("@Atomicset(" + atomicType + ") associated with field " + name() + " is not declared in type " + hostType().typeName());
+         }
+       }
+     }
+     // @NotAtomic modifier not allowed on Fields
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof NotAtomicAnnotation) {
+         error("@NotAtomic is only allowed on method declarations and hence not applicable here"); 
+       }
+     }
+   }
+   
+   public boolean TypeDecl.verifyGlobalAtomicity() {
+   	final boolean checkForGlobalAtomicity = true;
+   	if(checkForGlobalAtomicity) {
+        boolean found = globalAtomicity();
+        if(found) {
+        	String atomic_T = null;
+        	for(Iterator iter = atomicsets().iterator(); iter.hasNext(); ) {
+      			AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+       			atomic_T = decl.name();
+       			if(iter.hasNext()) {
+       				error("Looks like there are more than one @Atomicset declaration in type " + typeName());
+   				}
+     		}
+     		if(atomic_T!=null) {
+     			for(int i = 0; i < getNumBodyDecl(); i++) {
+  					BodyDecl b = getBodyDecl(i);
+      				if(b instanceof FieldDeclaration) {
+      					FieldDeclaration f = (FieldDeclaration)b;
+      					if(!f.isStatic()) {
+      						f.getModifiers().addModifier(new AtomicAnnotation("Atomic", new List().add(new Identifiers(atomic_T))));
+      					}
+      				}
+  				}
+     		}
+        }
+   	}
+   	return true;
+   }
+
+   refine NameCheck public void ParameterDeclaration.nameCheck() {
+     SimpleSet decls = outerScope().lookupVariable(name());
+     for(Iterator iter = decls.iterator(); iter.hasNext(); ) {
+       Variable var = (Variable)iter.next();
+       if(var instanceof VariableDeclaration) {
+         VariableDeclaration decl = (VariableDeclaration)var;
+         if(decl.enclosingBodyDecl() == enclosingBodyDecl())
+           error("duplicate declaration of local variable " + name());
+       }
+       else if(var instanceof ParameterDeclaration) {
+         ParameterDeclaration decl = (ParameterDeclaration)var;
+         if(decl.enclosingBodyDecl() == enclosingBodyDecl())
+           error("duplicate declaration of local variable " + name());
+       }
+     }
+
+     if(!lookupVariable(name()).contains(this)) {
+       error("duplicate declaration of parameter " + name());
+     }
+     
+     // Atomic set constraints
+     String atomicType = getModifiers().atomicType();
+     if(atomicType != null && atomicType.length() > 0) {
+       boolean found = false;
+       TypeAccess typeAccess = (TypeAccess) getTypeAccess();
+       for(Iterator iter1 = typeAccess.decls().iterator(); iter1.hasNext(); ) {
+         TypeDecl t = (TypeDecl)iter1.next();
+         for(Iterator iter2 = t.atomicsets().iterator(); iter2.hasNext(); ) {
+           AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter2.next();
+           if(decl.name().equals(atomicType)) {
+             found = true;
+             break;
+           }
+         }
+         if(!found) {
+           error("Type " + t.typeName() + " does not declares @Atomicset(" + 
+         	    	atomicType + ") used in the @Atomic("+atomicType+") with the parameter " + name());
+         }
+       }
+     }
+     // @NotAtomic modifier not allowed on ParameterDeclarations
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof NotAtomicAnnotation) {
+         error("@NotAtomic is only allowed on method declarations and not on parameter declaration"); 
+       }
+     }
+   }
+   
+   refine NameCheck public void MethodDecl.nameCheck() {
+     if(!hostType().methodsSignature(signature()).contains(this))
+       error("method with signature " + signature() + " is multiply declared in type " + hostType().typeName());
+     if(isNative() && hasBlock())
+       error("native methods must have an empty semicolon body");
+     if(isAbstract() && hasBlock())
+       error("abstract methods must have an empty semicolon body");
+     if(!hasBlock() && !(isNative() || isAbstract()))
+       error("only abstract and native methods may have an empty semicolon body");
+     
+     // Atomicset Constraints
+     // 1. @Atomic(arr[i].F) style or @Atomic(fieldA.fieldB.F) not allowed on the parameters declaration
+     // 2. If there is an empty @Atomic on the parameters or on the method modifier, then no other
+     // type of unitfor (e.g. @Atomic(X)) is allowed.
+     // 3. @AliasAtomic(...) type not allowed on the parameters
+     
+     boolean normalUnitfor = false;
+     boolean emptyUnitfor = false;
+     for(int i = 0; i < getNumParameter(); i++) {
+       for(int j = 0; j < getParameter(i).getModifiers().getNumModifier(); j++) {
+         if(getParameter(i).getModifiers().getModifier(j) instanceof AtomicAnnotation) {
+           AtomicAnnotation m = (AtomicAnnotation)getParameter(i).getModifiers().getModifier(j);
+           if(!m.simpleAtomicType()) {
+             error("@Atomic(" + m.getExactAtomicType() + ") not allowed on parameter declaration in Method "+ signature());
+           }
+           else if(m.emptyAtomicType()) {
+             emptyUnitfor = true;
+           }
+           else {
+             normalUnitfor = true;
+           }
+         }
+       }
+     }
+     
+     if(!emptyUnitfor) {
+       // Check the method modifiers for empty unitfor
+       for(int j = 0; j < getModifiers().getNumModifier(); j++) {
+         if(getModifiers().getModifier(j) instanceof AtomicAnnotation) {
+           AtomicAnnotation m = (AtomicAnnotation)getModifiers().getModifier(j);
+           if(m.emptyAtomicType()) {
+             emptyUnitfor = true;
+           }
+           else {
+             normalUnitfor = true;
+           }
+         }
+       }
+     }
+     
+     if(emptyUnitfor && normalUnitfor) {
+       error("When an empty @Atomic is present then no other @Atomic type should be used in declaration of the method " + signature());  
+     }
+   }
+   
+   public void AliasAtomicAnnotationOnInstanceExpr.nameCheck() {
+     super.nameCheck();
+     // AliasAtomic constraints
+     // The modifier should only be of AliasAtomicAnnotation type
+     if(!(getModifier() instanceof AliasAtomicAnnotation)) {
+       // Error
+       error(getModifier().getID() + " not allowed on class instance expression. Only @AliasAtomic(...) style allowed");
+     }
+     
+     // name of the atomic type in the class of the constructor
+     String[] id = getModifier().getID().split("=");
+     if(id.length == 1) {
+       error("@AliasAtomic(this."+ id[0] + "[]) is not allowed on class instance expression");
+     }
+     else if(id.length == 3) {
+       error("@AliasAtomic(this."+ id[0] + "[]" + id[1] + "=this." + id[2] +  ") is not allowed on class instance expression");
+     }
+     String atomicType = id[0];
+     // Thow error if this atomicType does not exist in the class of the constructor
+     TypeDecl t = type();
+     boolean found = false;
+     for(Iterator iter = t.atomicsets().iterator(); iter.hasNext(); ) {
+       AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+       if(decl.name().equals(atomicType)) {
+         found = true;
+         break;
+       }
+     }
+     if(!found) {
+       error("Type " + t.typeName() + " does not declares @Atomicset(" + atomicType + ")");
+     }
+     
+     // Check the similar for myself
+     String my_atomicType = id[1];
+     found = false;
+     t = hostType();
+     for(Iterator iter = t.atomicsets().iterator(); iter.hasNext(); ) {
+       AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+       if(decl.name().equals(my_atomicType)) {
+         found = true;
+         break;
+       }
+     }
+     if(!found) {
+       error("Type " + t.typeName() + " does not declares @Atomicset(" + my_atomicType + ")");
+     }
+   }
+   
+   refine NameCheck public void VariableDeclaration.nameCheck() {
+     SimpleSet decls = outerScope().lookupVariable(name());
+     for(Iterator iter = decls.iterator(); iter.hasNext(); ) {
+       Variable var = (Variable)iter.next();
+       if(var instanceof VariableDeclaration) {
+         VariableDeclaration decl = (VariableDeclaration)var;
+         if(decl != this && decl.enclosingBodyDecl() == enclosingBodyDecl())
+           error("duplicate declaration of local variable " + name() + " in enclosing scope");
+       }
+       // 8.4.1
+       else if(var instanceof ParameterDeclaration) {
+         ParameterDeclaration decl = (ParameterDeclaration)var;
+         if(decl.enclosingBodyDecl() == enclosingBodyDecl())
+           error("duplicate declaration of local variable and parameter " + name());
+       }
+     }
+     if(getParent().getParent() instanceof Block) {
+       Block block = (Block)getParent().getParent();
+       for(int i = 0; i < block.getNumStmt(); i++) {
+         if(block.getStmt(i) instanceof Variable) {
+           Variable v = (Variable)block.getStmt(i);
+           if(v.name().equals(name()) && v != this) {
+             error("duplicate declaration of local variable " + name());
+           }
+         }
+       }
+     }
+     
+     // @NotAtomic modifier not allowed on ParameterDeclarations
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof NotAtomicAnnotation ||
+       			getModifiers().getModifier(i) instanceof AtomicAnnotation) {
+         error("@NotAtomic / @Atomic not allowed in this scope"); 
+       }
+     }
+   }
+   
+   public void AliasAtomicAnnotationOnArrayCreationExpr.nameCheck() {
+     super.nameCheck();
+     // AliasAtomic constraints
+     // The modifier should only be of AliasAtomicAnnotation type
+     if(!(getModifier() instanceof AliasAtomicAnnotation)) {
+       // Error
+       error(getModifier().getID() + " not allowed on class instance expression. Only @AliasAtomic(...) style allowed");
+     }
+     
+     // name of the atomic type in the class of the constructor
+     String[] id = getModifier().getID().split("=");
+     if(id.length == 2) {
+       error("@AliasAtomic(" + id[0] + "=this." + id[1] + ") is not allowed on array creation expression");
+     }
+
+     if(id.length == 3) {     
+       String atomicType = id[1];
+       // Thow error if this atomicType does not exist in the class of the type
+       TypeDecl t = ((ArrayTypeAccess) getTypeAccess()).getAccess().type();
+       boolean found = false;
+       for(Iterator iter = t.atomicsets().iterator(); iter.hasNext(); ) {
+         AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+         if(decl.name().equals(atomicType)) {
+           found = true;
+           break;
+         }
+       }
+       if(!found) {
+         error("Type " + t.typeName() + " does not declares @Atomicset(" + atomicType + ")");
+       }
+     }
+     
+     // Check the similar for myself
+     String my_atomicType = id.length == 3 ? id[2] : id[0];
+     boolean found = false;
+     TypeDecl t = hostType();
+     for(Iterator iter = t.atomicsets().iterator(); iter.hasNext(); ) {
+       AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+       if(decl.name().equals(my_atomicType)) {
+         found = true;
+         break;
+       }
+     }
+     if(!found) {
+       error("Type " + t.typeName() + " does not declares @Atomicset(" + my_atomicType + ")");
+     }
+   }
+    
+}  

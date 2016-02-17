@@ -1,0 +1,966 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect Atomic {
+  /*
+   * ---------------------
+   *      PART --> 1: 
+   * ---------------------
+   * Below code to allow @Atomic(X) annotation only on FieldDeclaration
+   * and not on any other type of variable declaration.
+   */
+ 
+  refine 
+  public String AtomicAnnotation.getID() {
+    if(getNumIdentifiers() > 0) {
+      return getIdentifiers(getNumIdentifiers() - 1).getID();
+    }
+    return null;
+  }
+  
+  syn lazy String AliasAtomicAnnotation.getAtomicType() {
+    String[] modifier = getID().split("="); // This is in the form {"A", "B"}
+    // A=this.B
+    if(modifier.length == 2) return modifier[1];
+    // this.A[]B=this.B
+    else if(modifier.length == 3) return modifier[2];
+    //this.L[]
+    else return modifier[0];
+  }
+   
+  syn lazy String Modifiers.atomicType() {
+    for(int i = 0; i < getNumModifier(); i++) {
+      if(getModifier(i) instanceof AtomicAnnotation) {
+        AtomicAnnotation m = (AtomicAnnotation)getModifier(i);
+        return m.getID();
+      }
+    }
+    return null;
+  }
+  
+  syn lazy String Modifiers.getExactAtomicType() {
+    for(int i = 0; i < getNumModifier(); i++) {
+      if(getModifier(i) instanceof AtomicAnnotation) {
+        AtomicAnnotation m = (AtomicAnnotation)getModifier(i);
+        return m.getExactAtomicType();
+      }
+    }
+    return null;
+  }
+  
+  refine PrettyPrint
+  public void Modifiers.toString(StringBuffer s) {
+    for(int i=0; i < getNumModifier(); i++) {
+      if(getModifier(i) instanceof AtomicAnnotation) {
+        // skip
+      }
+      else if(getModifier(i) instanceof AliasAtomicAnnotation) {
+        // skip
+      }
+      else {
+        getModifier(i).toString(s);
+        s.append(" ");
+      }
+    }
+  }
+  
+  /*
+   * ---------------------
+   *      PART --> 2: 
+   * ---------------------
+   * Locks for Controlling generation of synchronization blocks
+   */
+
+   // We will create a <AtomicType, lock_status> type hashmap object
+   // for each atomicType declared in FieldDeclaration
+   private java.util.Map<String, Boolean> TypeDecl.atomicTypeMap = new java.util.HashMap<String,Boolean>();
+   
+   private void TypeDecl.createAtomicTypeMap() {
+     for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+       AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+       if (!atomicTypeMap.containsKey(decl.name())) {
+         atomicTypeMap.put(decl.name(), false); // initial status as unlocked
+       }
+     }
+   }
+   
+   protected boolean TypeDecl.atomicTypeLocked(String type) {
+     if(!atomicTypeMap.containsKey(type)) return false;
+     else return atomicTypeMap.get(type);
+   }
+      
+   protected boolean TypeDecl.tryLockAtomicType(String type, int sourceLine) {
+     try {
+     if(!atomicTypeMap.containsKey(type)) {
+       // Control will pass here only once for the entire program printing
+       // The control will pass here only the first time an atomic field
+       // is used in any ExprStmt.
+       createAtomicTypeMap();
+     }
+     if(!atomicTypeMap.get(type)) {
+       atomicTypeMap.put(type, true);
+       return true;
+     } 
+     }
+     catch(NullPointerException e) {
+       System.out.println("Error: NullPointerException occured while trying tryLockAtomicType() for SourceLine: "+sourceLine);
+       System.out.println("Error: The lock_ID passed was " + type);
+       if(atomicTypeMap != null) {
+         System.out.println("Error: Lock_IDs currently in this scope are:");
+         Iterator entries = atomicTypeMap.entrySet().iterator();
+         while (entries.hasNext()) {
+    	   Map.Entry entry = (Map.Entry) entries.next();
+    	   String key = (String)entry.getKey();
+           Boolean value = (Boolean)entry.getValue();
+           System.out.println("Key = " + key + ", Value = " + value);
+         }
+       }
+       throw e;
+     }
+     return false;
+   }
+   
+   protected void TypeDecl.unlockAtomicType(String type) {
+     atomicTypeMap.put(type, false);
+   }
+   
+   /*
+    * ---------------------
+    *      PART --> 3: 
+    * ---------------------
+    * Below code to decide when to wrap a group of statements within
+    * a synchronized block and with what lock
+    *
+    */
+
+    //
+    //
+    // 1. Find the atomicType access in a statement.
+    //
+    //
+    
+    // Return type is a list of atomicType, assuming a Stmt (eg IfStmt)
+    // may contain more than one atomicType access.
+    // Overriden in subclasses
+    syn lazy java.util.ArrayList<String> Stmt.getAtomicType();
+    
+    // Default value if the child class does not override this method.
+    eq Stmt.getAtomicType() = null;
+    
+    syn java.util.ArrayList<String> ForStmt.getAtomicType() {
+      java.util.ArrayList<String> atomicT_list = null;
+      // 1. check the initializers, they may be atomic type
+      for(int i = 0; i < getNumInitStmt(); i++) {
+        atomicT_list = getInitStmt(i).getAtomicType();
+        if(atomicT_list != null && atomicT_list.size() > 0) return atomicT_list;
+      }
+      
+      // 2. check the condition, they may be atomic type
+      if(hasCondition()) {
+        String atomic = getCondition().getAtomicType();
+        if(atomic != null) {
+          atomicT_list = new java.util.ArrayList<String>(0);
+          atomicT_list.add(atomic);
+          return atomicT_list;
+        }
+      }
+      
+      // 3. Check update statements
+      for(int i = 0; i < getNumUpdateStmt(); i++) {
+        atomicT_list = getUpdateStmt(i).getAtomicType();
+        if(atomicT_list != null && atomicT_list.size() > 0) return atomicT_list;
+      }
+      
+      // 4. check the body
+      return getStmt().getAtomicType();
+    }
+    
+    syn java.util.ArrayList<String> AssertStmt.getAtomicType() {
+    	java.util.ArrayList<String> atomictype = new java.util.ArrayList<String>();
+    	
+    	String first = getfirst().getAtomicType();
+    	if(first != null) atomictype.add(first);
+    	
+    	if(hasExpr()) {
+    		String atomic = getExpr().getAtomicType();
+    		if(atomic != null && !atomic.equals(first)) {
+    			atomictype.add(atomic);
+    		}
+    	}
+    	return atomictype;
+    }
+    
+    syn java.util.ArrayList<String> WhileStmt.getAtomicType() {
+      if(getCondition().getAtomicType() != null) {
+        java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(0);
+        atomicT_list.add(getCondition().getAtomicType());
+        return atomicT_list; 
+      }
+      else {
+        return getStmt().getAtomicType();
+      }
+    }
+    
+    syn java.util.ArrayList<String> SwitchStmt.getAtomicType() {
+      return getBlock().getAtomicType();
+    }
+    
+    syn java.util.ArrayList<String> DoStmt.getAtomicType() {
+      java.util.ArrayList<String> atomictype_stmt = getStmt().getAtomicType();
+      String atomictype_cond = getCondition().getAtomicType();
+      if(atomictype_cond != null) {
+      	if(atomictype_stmt != null && atomictype_stmt.size()>0) {
+      		if(!atomictype_stmt.get(0).equals(atomictype_cond)) {
+      			atomictype_stmt.add(atomictype_cond);
+      		}
+      	}
+      	else {
+      		atomictype_stmt = new java.util.ArrayList<String>();
+      		atomictype_stmt.add(atomictype_cond);
+      	}
+      }
+      return atomictype_stmt;
+    }
+    
+    syn java.util.ArrayList<String> IfStmt.getAtomicType() {
+      java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(0);
+	  
+	  String atomicType = getCondition().getAtomicType();
+	  if(atomicType != null) {
+	    atomicT_list.add(atomicType);
+	    return atomicT_list;
+	  }        
+
+	  java.util.ArrayList<String> atomicT_thenBlock = getThen().getAtomicType();
+	  if(atomicT_thenBlock != null) {
+	    if(atomicT_thenBlock.size() > 0) {
+	      for(int i=0; i<atomicT_thenBlock.size(); i++) {
+	        if(!atomicT_list.contains(atomicT_thenBlock.get(i))) {
+	          atomicT_list.add(atomicT_thenBlock.get(i));
+	        }
+  	      }
+	    }
+            //return atomicT_list;
+	  }
+	  
+	  if(hasElse()) {
+	    java.util.ArrayList<String> atomicT_elseBlock = getElse().getAtomicType();
+	    if(atomicT_elseBlock != null) {
+	      if(atomicT_elseBlock.size() > 0) {
+	        for(int i=0; i<atomicT_elseBlock.size(); i++) {
+	          if(!atomicT_list.contains(atomicT_elseBlock.get(i))) {
+	            atomicT_list.add(atomicT_elseBlock.get(i));
+	          }
+  	        }
+	      }
+	    }
+	  }
+	  return atomicT_list;     
+    }
+    
+	syn java.util.ArrayList<String> Block.getAtomicType() {
+	  java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(0);
+	  
+	  for(int i=0; i<getNumStmt(); i++) {
+	    java.util.ArrayList<String> atomicT_stmt = getStmt(i).getAtomicType();
+	    if(atomicT_stmt != null) {
+	      if(atomicT_stmt.size() > 0) {
+	        for(int j=0; j<atomicT_stmt.size(); j++) {
+	          if(!atomicT_list.contains(atomicT_stmt.get(j))) {
+	            atomicT_list.add(atomicT_stmt.get(j));
+	          }
+  	        }
+	      }
+	    }
+	  }	  
+	  return atomicT_list;
+	} 
+	
+	syn java.util.ArrayList<String> ExprStmt.getAtomicType() {
+	  String atomicType = getExpr().getAtomicType();
+	  if(atomicType != null) {
+	    java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(1);
+	    atomicT_list.add(atomicType);
+	    return atomicT_list;
+	  }
+	  return null;
+	}
+	
+	syn java.util.ArrayList<String> ReturnStmt.getAtomicType() {
+      if(hasResult()) {
+        String atomicType = getResult().getAtomicType();
+        if(atomicType != null) {
+          java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(0);
+          atomicT_list.add(atomicType);
+          return atomicT_list;
+        } 
+      }
+      return null;
+    }
+    
+    syn java.util.ArrayList<String> TryStmt.getAtomicType() {
+      return getBlock().getAtomicType();
+    }
+    
+    syn java.util.ArrayList<String> VariableDeclaration.getAtomicType() {
+      if(hasInit()) {
+        String atomicType = getInit().getAtomicType();
+        if(atomicType != null) {
+          java.util.ArrayList<String> atomicT_list = new java.util.ArrayList<String>(0);
+          atomicT_list.add(atomicType);
+          return atomicT_list;
+        }
+      }
+      return null;
+    }
+    
+	// This declaration denotes that getAtomicType()
+    // method has to be implemented by the children
+    // of this ASTNode.
+    syn lazy String Expr.getAtomicType();
+
+    // This gives the default value to return from
+    // the abstract class Expr, if the children ASTNode
+    // does not override this method.
+    eq Expr.getAtomicType() = null;
+
+    // We override the method in all the children classes we
+    // are interested.
+    syn String Unary.getAtomicType() {
+      return getOperand().getAtomicType();
+    }
+    
+    // when more than one atomicset allowed in a class
+    // then this needs to be changed.
+    syn lazy String ClassInstanceExpr.getAtomicType() {
+      for(int i=0; i<getNumArg(); i++) {
+        if(getArg(i) instanceof Access) {
+          String s = getArg(i).getAtomicType();
+          if(s != null) return s;
+        }
+      }
+      return null;
+    }
+    
+    syn String ParExpr.getAtomicType() {
+      return getExpr().getAtomicType();
+    }
+    
+    syn String Binary.getAtomicType() {
+      if(getLeftOperand().getAtomicType() != null) {
+        return getLeftOperand().getAtomicType();
+      }
+      else {
+        return getRightOperand().getAtomicType();
+      }
+    }
+    
+    syn String AssignExpr.getAtomicType() {
+      if(getDest().getAtomicType() != null) {
+        return getDest().getAtomicType();
+      }
+      else {
+        return getSource().getAtomicType();
+      }
+    }
+	    
+    syn String ArrayAccess.getAtomicType() {
+      return getExpr().getAtomicType();
+    }
+    
+    syn String ArithmeticExpr.getAtomicType() {
+      if(getLeftOperand().getAtomicType() != null) {
+        return getLeftOperand().getAtomicType();
+      }
+      else {
+        return getRightOperand().getAtomicType();
+      }
+    }
+  
+    syn String ThisAccess.getAtomicType() {
+      if(hostType().hasAtomicsets()) {
+        for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+          AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+	  return decl.name();
+        }
+      }
+      return null;
+    }
+
+    syn String AbstractDot.getAtomicType() {
+      if(getLeft().getAtomicType() != null) {
+        return getLeft().getAtomicType();
+      }
+      else {
+        return getRight().getAtomicType();
+      }
+    }
+  
+    syn String VarAccess.getAtomicType() {
+      // if the declaration is a primitive & final type, then even if its an
+      // atomic type, return always as null
+      if(decl().type().isPrimitive() && decl().isFinal()) {
+        return null;
+      }
+      
+      // A variable may be declared as "@AtomicAlias(E=this.L) Klass o". This case should be taken care and
+      // atomicType should not be retured as E, but as L.
+      for(int i=0; i<decl().getModifiers().getNumModifier(); i++) {
+        Modifier m = decl().getModifiers().getModifier(i);
+        if(m instanceof AliasAtomicAnnotation) {
+          AliasAtomicAnnotation a = (AliasAtomicAnnotation) m;
+          return a.getAtomicType();
+        }
+      }
+      String atomicT = null;
+      if(decl() instanceof FieldDeclaration) {
+      	/*
+      	 * in case of global atomicity, the ClassDecl.nameCheck adds the atomic type to
+      	 * the FieldDeclaration much later than the AST is created. In this particular
+      	 * case, somehow the FieldDeclaration.getModifiers().atomicType() is failing
+      	 * to report the atomic type. This is easy to solve, but for now calling the
+      	 * getExactAtomicType() instead, which is working fine.
+      	 */ 
+        atomicT = ((FieldDeclaration) decl()).getModifiers().getExactAtomicType();
+      }
+      else {
+      	atomicT = decl().getModifiers().atomicType();
+      }
+      return atomicT;
+    }
+    
+    syn lazy String RelationalExpr.getAtomicType() {
+      if(getLeftOperand().getAtomicType() != null) {
+        return getLeftOperand().getAtomicType();
+      }
+      else {
+        return getRightOperand().getAtomicType();
+      }
+    }
+    
+    syn lazy String MethodAccess.getAtomicType() {
+      if(decl().isNotAtomicType()) return null;
+      if(decl().isStatic()) {
+        // check the parameters being passed
+        for(int i = 0; i < getNumArg(); i++) {
+          if(getArg(i).getAtomicType() != null) {
+            return getArg(i).getAtomicType();
+          }
+        }
+        return null;
+      }
+      
+      if(decl().isAbstract()) {
+        //return the atomic types in this class
+        if(hostType().hasAtomicsets()) {
+          // here assuming only one atomicset per class (TODO for more than one)
+          for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+            AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+            if(iter.hasNext()) throw new Error(sourceLineNumber()+": TODO -- Implementation for more than one atomicsets in a class");
+            return decl.name();
+          }
+        }
+      }
+      //// if there is aliasatomic annotation then return the type
+      //if(decl().getAliasAtomicType() != null) return decl().getAliasAtomicType();
+      
+      // this method body is in current class or on superclass
+      java.util.ArrayList<String> decl_atomics = decl().getAtomicType();
+      if(decl_atomics != null && decl_atomics.size() == 1) {
+        for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+          AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+          if (decl.name().equals(decl_atomics.get(0))) {
+            return decl_atomics.get(0);
+          }
+        }
+      }
+      
+      if(getNumArg() > 0) {
+        for(int i = 0; i < getNumArg(); i++) {
+          if(getArg(i).getAtomicType() != null) {
+            //hostType().dotAccess = status_dotAccess;
+            return getArg(i).getAtomicType();
+          }
+        }
+      }
+      return null;
+    }
+    
+    syn lazy String ArrayCreationExpr.getAtomicType() {
+      if(getTypeAccess().getAtomicType() != null) return getTypeAccess().getAtomicType();
+      else if(hasArrayInit()) return getArrayInit().getAtomicType();
+      else return null;
+    }
+    
+    syn lazy String ArrayTypeWithSizeAccess.getAtomicType() {
+      return getExpr().getAtomicType();
+    }
+    
+    syn lazy String ConditionalExpr.getAtomicType() {
+      if(getCondition().getAtomicType() != null) return getCondition().getAtomicType();
+      if(getTrueExpr().getAtomicType() != null) return getTrueExpr().getAtomicType();
+      if(getFalseExpr().getAtomicType() != null) return getFalseExpr().getAtomicType();
+      return null;
+    }
+    
+    syn lazy String CastExpr.getAtomicType() {
+	  return getExpr().getAtomicType();      
+	}
+	
+	syn lazy String AliasAtomicAnnotationOnInstanceExpr.getAtomicType() {
+	  String[] modifier = getModifier().getID().split("="); // This is in the form {"A", "B"}
+	  return modifier[1];
+	}
+	
+	syn lazy String AliasAtomicAnnotationOnArrayCreationExpr.getAtomicType() {
+	  String[] modifier = getModifier().getID().split("="); // This is in the form {"A", "B"}
+	  if(modifier.length == 3)
+	    return modifier[2];
+	  else
+	    return modifier[0];
+	}
+	
+    //
+    //
+    // 3. Refine the printing of relevant statements.
+    //
+    //
+
+ 	refine PrettyPrint
+ 	public void VariableDeclaration.toString(StringBuffer s) {
+ 	  if(hostType().methodPreDeclarationBuff != null) {
+ 	    // PART-A:
+ 	    // For this case, print the declaration part
+ 	    // only in this buffer and make sure there is no
+ 	    // "final" modifier. 
+ 	    
+ 	    StringBuffer declaration = hostType().methodPreDeclarationBuff;
+ 	    // Before we include this decaration in this separate buffer,
+ 	    // we have to make sure this declaration is not printed before.
+ 	    String decl_str = " " + name() + ";";
+ 	    if(!declaration.toString().contains(decl_str)) {
+ 	      declaration.append(indent());
+ 	    
+ 	      // 1. Printing the declaration part
+ 	      Modifiers m = getModifiers();
+ 	      for(int i=0; i < m.getNumModifier(); i++) {
+            if(m.getModifier(i) instanceof AtomicAnnotation) {
+              // skip
+            }
+            else if(m.getModifier(i) instanceof AliasAtomicAnnotation) {
+              // skip
+            }
+            else if(m.getModifier(i).getID().equals("final")) {
+              // skip
+            }
+            else {
+              m.getModifier(i).toString(declaration);
+              s.append(" ");
+            }
+          }
+          // 2. The access type  
+          getTypeAccess().toString(declaration);
+          // 3. The name
+          declaration.append(" " + name());
+          declaration.append(";");
+        }
+        
+        // PART-B:
+        // Now just print the initializer in the normal buffer
+        
+        if(hasInit()) {
+          s.append(indent());
+          s.append(name());
+          s.append(" = ");
+          getInit().toString(s);
+          s.append(";");
+        }
+ 	  }
+ 	  else {
+ 	    s.append(indent());
+	    getModifiers().toString(s);
+        getTypeAccess().toString(s);
+        s.append(" " + name());
+        if(hasInit()) {
+          s.append(" = ");
+          getInit().toString(s);
+        } 	  
+        s.append(";");
+ 	  }
+ 	}
+ 	    
+    // Generate the "_internal" version of the method
+    
+    public boolean TypeDecl.generateMethodDeclInternalVersion = false;
+    private void MethodDecl.toString_internal(StringBuffer s) {
+      s.append(indent());
+      getModifiers().toString(s);
+      getTypeAccess().toString(s);
+      s.append(" " + name() + "_internal(");
+      if(getNumParameter() > 0) {
+        getParameter(0).toString(s);
+        for(int i = 1; i < getNumParameter(); i++) {
+          s.append(", ");
+          getParameter(i).toString(s);
+        }
+      }
+      s.append(")");
+      if(getNumException() > 0) {
+        s.append(" throws ");
+        getException(0).toString(s);
+        for(int i = 1; i < getNumException(); i++) {
+          s.append(", ");
+          getException(i).toString(s);
+        }
+      }  
+      if(hasBlock()) {
+        divideFor = null;
+        hostType().currentUmbrellaMethod = this;
+        getBlock().toString(s);
+        hostType().currentUmbrellaMethod = null;
+      }
+      else {
+        s.append(";");
+      }
+      if(divideFor != null) {
+        s.append(divideFor.toString());
+      }
+      divideFor = null;
+    }
+    
+    public boolean TypeDecl.insideStealBlock = false;
+    
+    refine PrettyPrint
+    public void MethodAccess.toString(StringBuffer s) {
+      String method_name = name();
+      
+      // When to generate the _internal version ::
+      // 1. If the declaration is static type no change required
+      // 2. If the class of this method does not have any atomicset then no change required
+      // 3. If we are currently printing the _internal version then this may be an _internal version too
+      // 4. If this method is called with a unitfor then this has to be _internal version (not in gobal unitfor if belongs to other class)
+      // 5. If not unitfor scope and this method belongs to other class with atomicset, then dont
+      //    print the internal version
+	  // 6. if the class of this method is my superclass then also print internal version even if unitfor scope      
+      
+      // If this method has work-stealing block, we always call the non internal version in any case
+      // If this method is called inside StealBlock, always call the non internal version in cany case
+      
+      if(!decl().isStatic() && decl().hostType().hasAtomicsets() && !decl().hasWorkStealingAccess() && !hostType().insideStealBlock) {
+        // If @NotAtomic on the umbrella method, then all method access is of _internal type
+        if(hostType().currentUmbrellaMethod != null
+        		&& hostType().currentUmbrellaMethod.isNotAtomicType()) {
+          method_name += "_internal";		
+        }
+        
+        // If this methodaccess is not from a dot access, then it will be _internal if
+        // the delaration of this method has unitfor, but not when the umbrella method
+        // unitfor is same as the declaration of this method access
+        // this check shd be performed before the next condition check (else if)
+        else if(!hostType().leftmostDotExprCalulated) {
+           String unitforMyDecl = decl().getUnitforType();
+           if(unitforMyDecl == null) { 
+             method_name += "_internal"; 
+           }
+           else {
+             // get the unitfor for the umbrella method
+             if(hostType().unitforTypeOnUmbrellaDeclaration != null
+             		&& hostType().unitforTypeOnUmbrellaDeclaration.equals(unitforMyDecl)) {
+               method_name += "_internal"; 
+             }
+           }
+        }
+
+		// decide only on the basis of hint provided by AbstractDot       
+        else if(hasAtomicity) {// && !hostType().globalUnitforForcingInternalVersion) {
+          method_name += "_internal";
+        }
+      }  
+      boolean leftmostDotExprCalulated = hostType().leftmostDotExprCalulated;
+      hostType().leftmostDotExprCalulated = false;
+      s.append(method_name);
+      s.append("(");
+      if(getNumArg() > 0) {
+        getArg(0).toString(s);
+        for(int i = 1; i < getNumArg(); i++) {
+          s.append(", ");
+          getArg(i).toString(s);
+        }
+      }
+      s.append(")");
+      hostType().leftmostDotExprCalulated = leftmostDotExprCalulated;
+    }
+    
+    public java.util.ArrayList<String> MethodDecl.getAtomicType() {
+      if(isNotAtomicType()) return null;
+      // If the hostType does not have any atomicsets AND this method has no unitfor
+      // then return null;
+      if(!hostType().hasAtomicsets() && getUnitforType()==null) return null; 
+      if(hasBlock()) {
+        return getBlock().getAtomicType();
+      }
+      return null;
+    }
+    
+    public boolean TypeDecl.atomicAccessAllowed = false;
+    
+    refine PrettyPrint
+    public void Block.toString(StringBuffer s) {
+      TypeDecl typeDecl = hostType();
+      String indent = indent();
+      if(!typeDecl.atomicAccessAllowed) {
+        s.append(shouldHaveIndent() ? indent : "");
+        s.append("{");
+        for(int i = 0; i < getNumStmt(); i++) {
+          getStmt(i).toString(s);
+        }
+        s.append(shouldHaveIndent() ? indent : indent.substring(0, indent.length()-2));
+        s.append("}");
+        return;
+      }
+      
+      // Wrap the whole block in synchronized block
+      // if: a) there is only one atomic type access
+      // and b) no work-stealing calls.
+      
+      java.util.ArrayList<String> atomicType_list = null;
+      s.append(shouldHaveIndent() ? indent : "");
+      s.append("{");
+      for(int i = 0; i < getNumStmt(); i++) {
+        Stmt stmt = getStmt(i);
+        final int sourceLine = stmt.sourceLineNumber();
+        boolean syncBlock = false;
+        boolean iRemovedAtomicAccess = false;
+        if(!stmt.hasWorkStealingAccess()) {
+          java.util.ArrayList<String> atomicType_list_new = null;
+	      try {
+            atomicType_list_new = stmt.getAtomicType();
+	      }
+	      catch(StackOverflowError e) {
+	        System.out.println("Error: StackOverflowError occured while trying getAtomicType() at SourceLine: "+sourceLine);
+	        throw e;
+	      }
+	      
+	      if(atomicType_list_new != null && atomicType_list_new.size() > 0) {
+	        // If this is an instance of BranchTargetStmt / IfStmt then the whole block
+	        // maybe wrapped inside the synchronized block
+	        iRemovedAtomicAccess = true;
+	        typeDecl.atomicAccessAllowed = false;
+	      }
+	      
+          // When the atomicType is re-discovered
+          if(atomicType_list != null && atomicType_list_new != null) {
+            if(atomicType_list_new.size() == 1) {
+              if(atomicType_list.get(0).equals(atomicType_list_new.get(0))) {
+                // This block will also continue to be inside the 
+                // previous synchronized block.
+              }
+              else {
+                // Close scope of current synchronized block +
+                // unlock the current atomicType +
+                // lock the new type and start generating a new block
+                typeDecl.unlockAtomicType(atomicType_list.get(0));
+                s.append(indent());
+                s.append("}");
+                atomicType_list = null;
+                if(typeDecl.tryLockAtomicType(atomicType_list_new.get(0), sourceLine)) {
+                  syncBlock = true;
+                  atomicType_list = atomicType_list_new;
+                }
+              }
+            }
+            else if (atomicType_list_new.size() == 0){
+              // This block will also continue to be inside the 
+              // previous synchronized block.
+            }
+            else {
+              if(atomicType_list_new.contains(atomicType_list.get(0))) {
+                // This block will also continue to be inside the 
+                // previous synchronized block.
+              }
+              else {
+                typeDecl.unlockAtomicType(atomicType_list.get(0));
+                s.append(indent());
+                s.append("}");
+                atomicType_list = null;
+              }
+            } 
+          }
+          // The first time atomicType is discovered
+          else if(atomicType_list == null && atomicType_list_new != null) {
+            if(atomicType_list_new.size() == 1) {
+              if(typeDecl.tryLockAtomicType(atomicType_list_new.get(0), sourceLine)) {
+                syncBlock = true;
+                atomicType_list = atomicType_list_new;
+              }
+            }
+          }
+          else {
+            // We will do a look-ahead and see if there are any more atomic accesses 
+            // in further remaining stmts before any work-stealing blocks(if any)
+            // is found. In no such cases we would close the scope of synchronized block before
+            // printing this statement
+            
+            if(atomicType_list != null && atomicType_list.size() > 0) {
+              int next_stmt = i + 1;
+              boolean atomics_in_furterStmt = false;
+              for(int x=next_stmt; x<getNumStmt(); x++) {
+                if(getStmt(x).hasWorkStealingAccess()) break;
+                java.util.ArrayList<String> atomicType_nextStmt = getStmt(x).getAtomicType();
+                if(atomicType_nextStmt != null && atomicType_nextStmt.size() > 0) {
+                  atomics_in_furterStmt = true;
+                  break;
+                }
+              }
+              if(!atomics_in_furterStmt) {
+                // close the scope of synchronized block before printing this stmt
+                typeDecl.unlockAtomicType(atomicType_list.get(0));
+                s.append(indent());
+                s.append("}");
+                atomicType_list = null;
+              }
+            }
+          }
+        }
+        else {
+          // We will deal with this at the subclass level.
+          if(atomicType_list != null) {
+            typeDecl.unlockAtomicType(atomicType_list.get(0));
+            s.append(indent());
+            s.append("}");
+            atomicType_list = null;
+          }
+        }
+        if(syncBlock) {
+          s.append(indent());
+          s.append("synchronized(_$lock_");
+          s.append(atomicType_list.get(0));
+          s.append(") {");
+        }
+        stmt.toString(s);
+        if(iRemovedAtomicAccess) {
+          typeDecl.atomicAccessAllowed = true;
+        }
+      }
+      s.append(shouldHaveIndent() ? indent : indent.substring(0, indent.length()-2));
+      s.append("}");
+      if(atomicType_list != null) {
+        typeDecl.unlockAtomicType(atomicType_list.get(0));
+        s.append(indent());
+        s.append("}");
+      }
+    }
+    
+    // Program analysis to find if a method directly or indirectly
+    // accesses any work-stealing blocks: SyncStealBlock / StealBlock
+    
+    public boolean Stmt.hasWorkStealingAccess() {
+      return false;
+    }
+   
+    public boolean Expr.hasWorkStealingAccess() {
+      return false;
+    }
+   
+    syn lazy boolean StealBlock.hasWorkStealingAccess() {
+      return true;
+    }
+    
+    syn lazy boolean SyncStealBlock.hasWorkStealingAccess() {
+      return true;
+    }
+  
+    syn lazy boolean MethodDecl.hasWorkStealingAccess() {
+      if(hasBlock()) return getBlock().hasWorkStealingAccess();
+      else return false;
+    }
+   
+    syn lazy boolean Block.hasWorkStealingAccess() {
+      for(int i = 0; i < getNumStmt(); i++) {
+        if(getStmt(i).hasWorkStealingAccess()) return true;
+      }
+      return false;
+    }
+    
+    syn lazy boolean IfStmt.hasWorkStealingAccess() {
+      if(getCondition().hasWorkStealingAccess()) return true;
+	  // First check the block of code in the 'IF" block  
+      else if(getThen().hasWorkStealingAccess()) return true;
+	  else if(hasElse()) {
+	    return getElse().hasWorkStealingAccess();
+	  }
+	  else return false;
+    }
+    
+    syn lazy boolean ForStmt.hasWorkStealingAccess() {
+      return getStmt().hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean SwitchStmt.hasWorkStealingAccess() {
+      return (getBlock()).hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean WhileStmt.hasWorkStealingAccess() {
+      return getStmt().hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean DoStmt.hasWorkStealingAccess() {
+      return getStmt().hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean ExprStmt.hasWorkStealingAccess() {
+      return getExpr().hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean ReturnStmt.hasWorkStealingAccess() {
+      if(hasResult()) return getResult().hasWorkStealingAccess();
+      else return false;
+    }
+    
+    syn lazy boolean AssignExpr.hasWorkStealingAccess() {
+      return getSource().hasWorkStealingAccess();
+    }
+    
+    syn lazy boolean VariableDeclaration.hasWorkStealingAccess() {
+      if(hasInit()) return getInit().hasWorkStealingAccess();
+   	  else return false;
+    }
+    
+    syn lazy boolean AbstractDot.hasWorkStealingAccess() {
+      if(getLeft().hasWorkStealingAccess()) {
+        return true;
+      }
+      else {
+        return getRight().hasWorkStealingAccess();
+      }
+    }
+
+    // To control StackOverFlow due to recursion
+    private boolean MethodAccess.hasWorkStealingAccess_eval = false;
+      
+    syn lazy boolean MethodAccess.hasWorkStealingAccess() {
+      if(!hasWorkStealingAccess_eval) hasWorkStealingAccess_eval = true;
+      else return false;
+      
+      MethodDecl method = decl();
+      if(method.isAbstract()) return false;
+      else {
+        return method.hasWorkStealingAccess();
+      }
+    }
+}

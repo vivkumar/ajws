@@ -1,0 +1,82 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+Modifier modifier = 
+    ATOMIC 						{: return new AtomicAnnotation("Atomic", new List().add(new Identifiers(""))); :}
+  | ATOMIC LPAREN atomicset_access_lists.d  RPAREN 
+							{: 
+							   return new AtomicAnnotation("Atomic", d); 
+							:}
+  ;
+
+List atomicset_access_lists =
+    atomicset_access.d			        	{:
+							  List l = new List();
+							  l.add(d);
+							  return l;
+							:}
+
+  | atomicset_access_lists.l atomicset_access.d   	{:
+							  l.add(d);
+							  return l;
+  							:} 
+  ;
+ 
+Identifiers atomicset_access =
+    DOT 						{: return new Identifiers(DOT); :}
+  | simple_name_decl.a					{: return new Identifiers(a.getID()); :}
+  | LBRACK						{: return new Identifiers(LBRACK); :}			
+  | RBRACK						{: return new Identifiers(RBRACK); :}			
+  ;
+
+Modifier modifier = 
+    ALIASATOMIC LPAREN IDENTIFIER.a EQ THIS DOT IDENTIFIER.b RPAREN
+							{: return new AliasAtomicAnnotation(a + "=" + b); :}
+  | ALIASATOMIC LPAREN THIS DOT IDENTIFIER.a LBRACK RBRACK IDENTIFIER.b EQ THIS DOT IDENTIFIER.c RPAREN
+							{: return new AliasAtomicAnnotation(a + "=" + b + "=" + c); :}
+  | ALIASATOMIC LPAREN THIS DOT IDENTIFIER.a LBRACK RBRACK RPAREN
+							{: return new AliasAtomicAnnotation(a); :}
+  ;
+
+Expr class_instance_creation_expression =
+    modifier.m NEW class_or_interface_type.t LPAREN argument_list.l? RPAREN 
+    							{: return new AliasAtomicAnnotationOnInstanceExpr(t, l, new Opt(), m); :}
+  ;
+
+Expr array_creation_uninit =
+    modifier.m NEW class_or_interface_type.t dim_exprs.d  
+							{: return new AliasAtomicAnnotationOnArrayCreationExpr(t.addArrayDims(d), new Opt(), m); :}
+  | modifier.m NEW class_or_interface_type.t dim_exprs.d dims.e 
+							{: return new AliasAtomicAnnotationOnArrayCreationExpr(t.addArrayDims(d).addArrayDims(e), new Opt(), m); :}
+  ;
+
+AtomicsetAnnotationDecl atomicsetannotation_decl =
+    ATOMICSET LPAREN IDENTIFIER RPAREN SEMICOLON 	{: return new AtomicsetAnnotationDecl(IDENTIFIER); :}
+  ;
+
+BodyDecl class_member_declaration	=
+    atomicsetannotation_decl.a                      	{: return a; :}
+  ;
+
+BodyDecl interface_member_declaration   =
+    atomicsetannotation_decl.a                      	{: return a; :}
+  ;
+
+Modifier modifier = 
+    NOTATOMIC					 	{: return new NotAtomicAnnotation(); :} 
+  ;

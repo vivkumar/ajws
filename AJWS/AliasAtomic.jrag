@@ -1,0 +1,57 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect AliasAtomic {
+  
+  public void AliasAtomicAnnotationOnInstanceExpr.toString(StringBuffer s) {
+    String[] modifier = getModifier().getID().split("="); // This is in the form {"A", "B"}
+    String this_atomicType = modifier[1];
+	String lock = "_$lock_" + this_atomicType;
+	
+	// following from ClassInstanceExpr
+	s.append("new ");
+    getAccess().toString(s);
+    s.append("(");
+    if(getNumArg() > 0) {
+      getArg(0).toString(s);
+      for(int i = 1; i < getNumArg(); i++) {
+        s.append(", ");
+        getArg(i).toString(s);
+      }
+      // pass the lock for atomicType
+      s.append(", ");
+    }
+    // pass the lock for atomicType
+    s.append("this." + lock);
+    
+    s.append(")");
+
+    if(hasTypeDecl()) {
+      TypeDecl decl = getTypeDecl();
+      s.append(" {");
+      for(int i = 0; i < decl.getNumBodyDecl(); i++) {
+        if(!(decl.getBodyDecl(i) instanceof ConstructorDecl))
+          decl.getBodyDecl(i).toString(s);
+      }
+      s.append(typeDeclIndent());
+      s.append("}");
+    }    
+     
+  
+  }
+}

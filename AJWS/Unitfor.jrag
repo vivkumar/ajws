@@ -1,0 +1,611 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect Unitfor {
+   /** We dont have a separate annotation for unitfor
+     * When method declaration has parameters with @Atomic(X)
+     * annotation then it means unitfor(X)
+     */
+   
+   public boolean TypeDecl.unitforScope = false;
+   
+   syn lazy boolean AtomicAnnotation.simpleAtomicType() {
+     if(getNumIdentifiers() > 1) {
+       return false;
+     }
+     else {
+       return true;
+     } 
+   }
+   
+   syn lazy boolean AtomicAnnotation.emptyAtomicType() {
+     String a = getExactAtomicType();
+     if(a.length() == 0) return true;
+     else return false;
+   }
+   
+   syn lazy String AtomicAnnotation.getExactAtomicType() {
+     String s = "";
+     for(int i=0; i<getNumIdentifiers(); i++) {
+       s += getIdentifiers(i).getID();
+     }
+     return s; 
+   }
+   
+   syn lazy String AtomicAnnotation.getFieldOfAtomicType() {
+     if(getNumIdentifiers() > 2) {
+       String s = "";
+       // For field  type there must be a DOT other than the identifier
+       for(int i=0; i<getNumIdentifiers()-1; i++) {
+         s += getIdentifiers(i).getID();
+       }
+       // This includes the last DOT as well
+       return s;  
+     }
+     return null; 
+   }
+   
+   syn lazy String ParameterDeclaration.getUnitfor() {
+     return getModifiers().atomicType();
+   } 
+   
+   syn lazy boolean ParameterDeclaration.hasAliasAtomicAnnotation() {
+     for(int i = 0; i < getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof AliasAtomicAnnotation) {
+         return true;
+       }
+     }
+     return false;
+   } 
+   
+   syn lazy String MethodDecl.getUnitforType() {
+     // Check the method modifiers
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof AtomicAnnotation) {
+         AtomicAnnotation m = (AtomicAnnotation)getModifiers().getModifier(i);
+         return m.getID();
+       }
+     }
+     
+     // Now check the method parameters
+     for(int i = 0; i < getNumParameter(); i++) {
+       String unitfor = getParameter(i).getUnitfor();
+       if(unitfor != null) {
+         return unitfor;
+       }
+     }
+     return null;  
+   }
+   
+   public String TypeDecl.unitforTypeOnUmbrellaDeclaration = null;
+   
+   syn lazy String ConstructorDecl.getUnitforType() {
+     // Check the method parameters
+     for(int i = 0; i < getNumParameter(); i++) {
+       String unitfor = getParameter(i).getUnitfor();
+       if(unitfor != null) {
+         return unitfor;
+       }
+     }
+     return null;  
+   }
+   
+   /*
+   // return 0 ==> Empty unitfor
+   // return 1 ==> Non empty unitfor
+   // return 2 ==> No unitfor present
+   syn lazy int MethodDecl.getUnitforType() {
+     // Check the method modifiers
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+       if(getModifiers().getModifier(i) instanceof AtomicAnnotation) {
+         AtomicAnnotation m = (AtomicAnnotation)getModifiers().getModifier(i);
+         if(m.emptyAtomicType()) {
+           return 0;
+         }
+         else {
+           return 1;
+         }
+       }
+     }
+     
+     // Now check the method parameters
+     for(int i = 0; i < getNumParameter(); i++) {
+       String unitfor = getParameter(i).getUnitfor();
+       if(unitfor != null) {
+         if(unitfor.length() == 0) {
+           return 0;
+         }
+         else {
+           return 1;
+         }
+       }
+     }
+     return 2; 
+   }  
+   */
+   
+   // Determine the return type of the method declaration. Baiscally to decide whether
+   // it returns any atomic field from its class declaration. If yes, then this version
+   // of the method will always be printed as _internal i.e. in A().B().C(), if A() returns
+   // an atomic field, the print will be A_internal().B_internal().C_internal().
+    
+   syn lazy boolean Stmt.stmtReturnsAtomicType();
+   eq Stmt.stmtReturnsAtomicType() = false;
+    
+   syn lazy boolean Block.stmtReturnsAtomicType() {
+     // the return stmt will be definitely in the last stmt
+     return getStmt(getNumStmt() - 1).stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean IfStmt.stmtReturnsAtomicType() {
+     if(hasElse()) {
+       // if there is else block, then just check this block
+       // as this should have return stmt
+       return getElse().stmtReturnsAtomicType();
+     }
+     else {
+       return getThen().stmtReturnsAtomicType();
+     }
+   }
+    
+   syn lazy boolean DoStmt.stmtReturnsAtomicType() {
+     return getStmt().stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean WhileStmt.stmtReturnsAtomicType() {
+     return getStmt().stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean ForStmt.stmtReturnsAtomicType() {
+     return getStmt().stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean EnhancedForStmt.stmtReturnsAtomicType() {
+     return getStmt().stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean SwitchStmt.stmtReturnsAtomicType() {
+     return getBlock().stmtReturnsAtomicType();
+   }
+    
+   syn lazy boolean ReturnStmt.stmtReturnsAtomicType() {
+     if(hasResult()) {
+	   if(getResult() instanceof VarAccess) {
+	     if(((VarAccess)getResult()).decl() instanceof FieldDeclaration) {
+           FieldDeclaration f = (FieldDeclaration) ((VarAccess)getResult()).decl();
+           if(f.getModifiers().atomicType() != null) {
+             return true;
+           }	      
+	     }
+	   }
+	   else if(getResult() instanceof AssignExpr) {
+	     AssignExpr ae = (AssignExpr) getResult();
+	     if(ae.getDest() instanceof VarAccess) {
+	       VarAccess v = (VarAccess) ae.getDest();
+	       if(v.decl() instanceof FieldDeclaration) {
+	         FieldDeclaration f = (FieldDeclaration) v.decl();
+	         if(f.getModifiers().atomicType() != null) {
+               return true;
+             }
+	       }
+	     }
+	   }
+	   return false;
+     }
+     else {
+       return false;
+     }
+   }
+   
+   syn lazy boolean MethodDecl.returnStmtHasAtomicField() {
+     if(isAbstract() || isStatic() || isVoid()) return false;
+     else if(hasBlock()) return getBlock().stmtReturnsAtomicType(); 
+     else return false;
+   }
+   
+   public boolean TypeDecl.unitforForcingInternalVersion = false;
+   public boolean TypeDecl.globalUnitforForcingInternalVersion = false;
+   
+   // TO help decide method version while printing
+   // 1. in expr A.B(), if A is atomic or aliasAtomic, the o/p shd be A.B_internal()
+   // 2. in expr A.B().C().D(), if A is atomic or aliasAtomic, the o/p shd be A.B_internal().C_internal().D_internal()
+   // 3. in expr B().C(), where B() is from the same class, the o/p shd be B_internal().C()
+   // 4. in expr B().C(), where B()'s decl shows return type as @AliasAtomic then the o/p shd be B_internal().C_internal()
+   // 5. in expr A.B().C(), where A is not atomic or aliasAtomic, the o/p shd be A.B().C() always 
+   // 6. in expr A.B().C(), if A is a parameter from methodDecl and it is unitfor (eg @Atomic(X)), then the o/p shd be A.B_internal().C_internal() 
+   public boolean TypeDecl.leftmostDotExprCalulated = false;
+   public boolean Expr.hasAtomicity = true;
+   
+   private boolean AbstractDot.setAtomicityRightExpr() {
+     if(!hostType().leftmostDotExprCalulated) {
+       boolean leftmostDotExprCalulated = false;
+       hostType().leftmostDotExprCalulated = true;
+       if(isPackageAccess()) {
+         getRight().hasAtomicity = false;
+         return leftmostDotExprCalulated;
+       }
+       
+       if(getLeft() instanceof MethodAccess) {
+         MethodDecl m = ((MethodAccess)getLeft()).decl();
+         if(!m.returnStmtHasAtomicField()) {
+           getRight().hasAtomicity = false;
+         } 
+       }
+       else {
+         if(getLeft() instanceof ThisAccess) {
+           if(!hostType().hasAtomicsets()) {
+             getRight().hasAtomicity = false;
+           }
+         }
+         else {
+           String atomicType = getLeft().getAtomicType();
+           if(atomicType == null) {
+             getRight().hasAtomicity = false;
+           }
+           else if(atomicType.length() == 0) {
+             // generic unitfor
+             getRight().hasAtomicity = false;
+           }
+         }
+       }
+     }
+     return false;
+   }
+   
+   refine PrettyPrint
+   public void AbstractDot.toString(StringBuffer s) {
+   	 if(isPackageAccess() || isTypeAccess()) {
+   	 	// Print the leftExpr
+     	getLeft().toString(s);
+     	if(!nextAccess().isArrayAccess())
+       		s.append(".");
+	    getRight().toString(s);
+	    return;
+   	 }
+     // 1. If the form is A().B(), where A() has unitfor scope, then the o/p shd be
+     // A().B_internal()
+     boolean unitforScope = false;
+     boolean leftmostDotExprCalulated = hostType().leftmostDotExprCalulated;
+     if(!leftmostDotExprCalulated) {
+       // check unitfor scope
+       if(getLeft() instanceof MethodAccess) {
+         // if the decl involves unitfor then it will always be a non _internal version
+         // but not if the umbrealla contructor / method has the same unitfor type
+         String unitforMyDecl = ((MethodAccess)getLeft()).decl().getUnitforType();
+         if(unitforMyDecl != null 
+         		&& !hostType().unitforTypeOnUmbrellaDeclaration.equals(unitforMyDecl)) {
+           hostType().leftmostDotExprCalulated = true;
+           getLeft().hasAtomicity = false;
+           unitforScope = true;
+         }
+       }
+     }
+     
+     // Print the leftExpr
+     getLeft().toString(s);
+     
+     if(!nextAccess().isArrayAccess())
+       s.append(".");
+     
+     // reset the atomicity to true if the leftmost of the first dot was
+     // method with unitfor scope [A().B_internal()]
+     if(unitforScope) getLeft().hasAtomicity = true;
+     
+     if(!leftmostDotExprCalulated) {
+       leftmostDotExprCalulated = setAtomicityRightExpr();
+     }
+     else {
+       getRight().hasAtomicity = getLeft().hasAtomicity;
+     }
+     
+     //Now print the leftExpr
+     getRight().toString(s);
+   
+     // reset all flags
+     if(!leftmostDotExprCalulated) {
+       hostType().leftmostDotExprCalulated = false;
+     }
+     getLeft().hasAtomicity = true;
+     getRight().hasAtomicity = true;
+   }
+   
+   syn lazy boolean MethodDecl.isNotAtomicType() {
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+         if(getModifiers().getModifier(i) instanceof NotAtomicAnnotation) {
+           return true;
+         }
+     }
+     return false;
+   }
+ 
+   syn lazy String MethodDecl.getAliasAtomicType() {
+     for(int i=0; i<getModifiers().getNumModifier(); i++) {
+         if(getModifiers().getModifier(i) instanceof AliasAtomicAnnotation) {
+           AliasAtomicAnnotation a = (AliasAtomicAnnotation) getModifiers().getModifier(i);
+           String[] modifier = a.getID().split("=");
+           if(modifier.length == 2) {
+             // we need to return 'A' in 'A=this.B' here 
+             return modifier[0];
+           }
+           else if(modifier.length == 3) {
+             // we need to return 'A' in 'this.B[]A=this.B' here 
+             return modifier[1];
+           }
+           else {
+             // this.L[]
+             return modifier[0];
+           }
+         }
+     }
+     return null;
+   }
+ 
+   syn lazy int MethodDecl.generateSyncBlocksForUnitfors(StringBuffer s, String unitforType) {
+     // Unitfors are of following types:
+     // 1. On parameters it can be either @Atomic or @Atomic(X)
+     // 2. On method's modifiers it can be either @Atomic(array[i].X)
+     //    or @Atomic(x.y.Z)
+     // When unitfor exists, synchronization should be taken on all the 
+     // atomicsets involved. This includes the current class's as well as
+     // on the parameters with unitfor annotations (@Atomic(X)).
+     // If empty unitfor is used (@Atomic), then: a) get the atomicTypes from the class declaration
+     // of all the parameters; b) get the atomicTypes that is declared in the current
+     // class. 
+     // Then take synchronization on all these atomic types.
+     
+     //default or generic unitfor(@Atomic)
+     if(unitforType.length() == 0) {
+       hostType().globalUnitforForcingInternalVersion = true;
+       java.util.ArrayList<String> empty_atomic_type = new java.util.ArrayList<String>();
+       // get all the atomicTypes that exists in the class of the each parameters
+       for(int i = 0; i < getNumParameter(); i++) {
+	     TypeAccess typeAccess = (TypeAccess) getParameter(i).getTypeAccess();
+         for(Iterator iter1 = typeAccess.decls().iterator(); iter1.hasNext(); ) {
+           TypeDecl t = (TypeDecl)iter1.next();
+           boolean wasObjectType = false;
+           if(t.typeName().equals("java.lang.Object")) {
+             // If any "Object" parameter is marked as @Atomic, then this will include all
+             // the atomicsets from current class.
+             // e.g.: AbstractMap_SimpleEntry.java: public boolean equals(@Atomic Object o) {....}
+             t = hostType();
+             wasObjectType = true;
+           } 
+           for(Iterator iter2 = t.atomicsets().iterator(); iter2.hasNext(); ) {
+             AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter2.next();
+             if(!wasObjectType) {
+               empty_atomic_type.add(getParameter(i).name() + ".getLockFor" + decl.name() + "()");
+             }
+             else {
+               empty_atomic_type.add("((ajws.Atomic) " + getParameter(i).name() + ").getLock()");
+             }
+           }
+         }         
+       }
+       // add the atomic types on current class
+       if(hostType().hasAtomicsets()) {
+         for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+           AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+           empty_atomic_type.add("_$lock_" + decl.name());
+         }
+       }
+       // emit the code
+       s.append(indent());
+       s.append("{");
+       s.append(indent());
+       if(empty_atomic_type.size() <= 2) {
+          if(empty_atomic_type.size() == 2) {
+            s.append("ajws.OrderedLock l1 = null, l2 = null;");
+            s.append(indent());
+            s.append("ajws.OrderedLock l3 = " + empty_atomic_type.get(0) + ";");
+            s.append(indent());
+            s.append("ajws.OrderedLock l4 = " + empty_atomic_type.get(1) + ";");
+            s.append(indent());
+            s.append("if (l3.getIndex() > l4.getIndex()) {");
+            s.append(indent());
+            s.append("l1 = l3;");
+            s.append(indent());
+            s.append("l2 = l4;");
+            s.append(indent());
+            s.append("} else {");
+            s.append(indent());
+            s.append("l1 = l4;");
+            s.append(indent());
+            s.append("l2 = l3;");
+            s.append(indent());
+            s.append("}");
+            s.append(indent());
+            s.append("synchronized(l1) {");
+            s.append(indent());
+            s.append("synchronized(l2) {");
+          }
+          else {
+      		s.append(indent());
+            s.append("synchronized(" + empty_atomic_type.get(0) + ") {");    
+          }
+       }  
+       else {
+         s.append("ajws.OrderedLock[] _$locks = new ajws.OrderedLock[" + empty_atomic_type.size() + "];");
+        
+         for(int i=0; i<empty_atomic_type.size(); i++) {
+           s.append(indent());
+           s.append("_$locks[" + i + "] = " + empty_atomic_type.get(i) + ";");    
+         }
+       
+         s.append(indent());
+         s.append("ajws.OrderedLock.sort(_$locks);");
+         for(int i=0; i<empty_atomic_type.size(); i++) {
+	       s.append(indent());
+	       s.append("synchronized(_$locks[" + i + "]) {");  
+	     }
+	   }
+       return empty_atomic_type.size();
+     }
+     // unitfor on some of the parameters only
+     else {
+       // start investigating the Method parameters
+       java.util.Map<Integer, String> unitfor_list = new java.util.HashMap<Integer,String>();
+       for(int i = 0; i < getNumParameter(); i++) {
+         String unitfor = getParameter(i).getUnitfor();
+         if(unitfor != null) unitfor_list.put(i, unitfor);
+       }
+
+       // Now start investigating the method modifiers       
+       java.util.ArrayList<AtomicAnnotation> atomic_on_modifier = new java.util.ArrayList<AtomicAnnotation>();
+       for(int i=0; i<getModifiers().getNumModifier(); i++) {
+         if(getModifiers().getModifier(i) instanceof AtomicAnnotation) {
+           AtomicAnnotation m = (AtomicAnnotation)getModifiers().getModifier(i);
+           atomic_on_modifier.add(m);
+         }
+       }
+       
+       // Also on atomicsets of this class
+       int total_locks = atomic_on_modifier.size() + unitfor_list.size()
+     						+ hostType().atomicsets().size();
+     						
+       // now emit the code
+       s.append(indent());
+       s.append("{");
+       s.append(indent());
+       
+       if(total_locks == 1) {
+         String lockType = null;
+         
+         // as total locks == 1, its unitfor either on mathod modifier
+         // or on parameter only
+         // first print the locks for parameters
+         for(int j=0; j<getNumParameter(); j++) {
+           if(unitfor_list.containsKey(j)) {
+             lockType = getParameter(j).name() + ".getLockFor" + unitfor_list.get(j) + "()";
+   	       }
+	     }
+	     
+	     // Now start investigating the method modifiers 
+	     if(lockType == null) {
+	       for(int i=0; i<atomic_on_modifier.size(); i++) {
+	         AtomicAnnotation m = atomic_on_modifier.get(i);
+      	     String field = m.getFieldOfAtomicType();
+	    	 String atomic = m.getID();
+	    	 lockType = field + "getLockFor" + atomic + "()";
+	       }
+	     }
+	     
+         s.append("synchronized(" + lockType + ") {");
+         return total_locks;
+       }
+       else if(total_locks == 2) {
+         s.append("ajws.OrderedLock l1 = null, l2 = null;");
+         s.append(indent());
+         boolean l3 = false, l4 = false;
+         
+         // first print the locks for parameters
+         for(int j=0; j<getNumParameter(); j++) {
+           if(unitfor_list.containsKey(j)) {
+	         s.append(indent());
+	         String lock = !l3 ? "l3" : (!l4 ? "l4" : null);
+	         if(lock == null) throw new Error("Something unexpected happened inside MethodDecl.generateSyncBlocksForUnitfors().. at 1..");
+	         if(lock.equals("l3")) l3=true;
+	         else l4=true;
+	         s.append("ajws.OrderedLock " + lock + " = " + getParameter(j).name() + ".getLockFor" + unitfor_list.get(j) + "();");
+   	       }
+	     }
+	     
+	     // Now start investigating the method modifiers 
+	     for(int i=0; i<atomic_on_modifier.size(); i++) {
+	       s.append(indent());
+	       String lock = !l3 ? "l3" : (!l4 ? "l4" : null);
+	       if(lock == null) throw new Error("Something unexpected happened inside MethodDecl.generateSyncBlocksForUnitfors().. at 2..");
+	       if(lock.equals("l3")) l3=true;
+	       else l4=true;
+	         
+	       AtomicAnnotation m = atomic_on_modifier.get(i);
+  		   String field = m.getFieldOfAtomicType();
+	  	   String atomic = m.getID();
+	       s.append("ajws.OrderedLock " + lock + " = " + field + "getLockFor" + atomic + "();");
+	     }
+	     
+	     // Now on atomicsets of current class
+         for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+           String lock = !l3 ? "l3" : (!l4 ? "l4" : null);
+	       if(lock == null) throw new Error("Something unexpected happened inside MethodDecl.generateSyncBlocksForUnitfors().. at 3..");
+	       if(lock.equals("l3")) l3=true;
+	       else l4=true;
+	         
+           AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+           s.append(indent());
+           s.append("ajws.OrderedLock " + lock+ " = this.getLockFor" + decl.name() + "();");
+         }
+	     
+         s.append(indent());
+         s.append("if (l3.getIndex() > l4.getIndex()) {");
+         s.append(indent());
+         s.append("l1 = l3;");
+         s.append(indent());
+         s.append("l2 = l4;");
+         s.append(indent());
+         s.append("} else {");
+         s.append(indent());
+         s.append("l1 = l4;");
+         s.append(indent());
+         s.append("l2 = l3;");
+         s.append(indent());
+         s.append("}");
+         s.append(indent());
+         s.append("synchronized(l1) {");
+         s.append(indent());
+         s.append("synchronized(l2) {");
+         return total_locks;
+       }
+       else {
+	     s.append("ajws.OrderedLock[] _$locks = new ajws.OrderedLock[" + total_locks + "];");
+		 int i = 0;
+         // First iterate on the modifier's unitfors
+         for(int j=0; j<atomic_on_modifier.size(); j++) {
+           AtomicAnnotation m = atomic_on_modifier.get(j);
+	       s.append(indent());
+  		   String field = m.getFieldOfAtomicType();
+  	  	   String atomic = m.getID();
+	       s.append("_$locks[" + i++ + "] = " + field + "getLockFor" + atomic + "();");         
+         }
+       
+         // Now on atomicsets of current class
+         for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+           AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+           s.append(indent());
+           s.append("_$locks[" + i++ + "] = this.getLockFor" + decl.name() + "();");
+         }
+       
+         // Now on method parameters
+         for(int j=0; j<getNumParameter(); j++) {
+           if(unitfor_list.containsKey(j)) {
+	         s.append(indent());
+	         s.append("_$locks[" + i++ + "] = " + getParameter(j).name() + ".getLockFor" + unitfor_list.get(j) + "();");
+   	       }
+	     } 
+	   
+         // sort the lock array and emit synchronized statement
+         s.append(indent());
+         s.append("ajws.OrderedLock.sort(_$locks);");
+	     for(i=0; i<total_locks; i++) {
+	       s.append(indent());
+	       s.append("synchronized(_$locks[" + i + "]) {");
+	     }     
+         return total_locks;	     
+       }
+     }
+   }
+}

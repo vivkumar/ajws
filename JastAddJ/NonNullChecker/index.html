@@ -1,0 +1,170 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>Untitled Document</title>
+</head>
+
+<body>
+<h1 class="documentFirstHeading">Non-null types for Java</h1>
+<p>Non-null types is a type-based approach to detect possible null pointer
+  violations in code statically at compile time. Fähndrich and Leino showed how
+  an object-oriented language such as Java or C# could be extended with non-null
+  types. We have extended JastAddJ Java compiler, in a modular way, to include non-null
+  types. This is an example of how a large JastAdd project can be extended in an
+  easy and declarative way. We have also implemented an inference algorithm to
+retrofit legacy code to include non-null types.</p>
+<p>We provide two tools to support development in Java with non-null types: <em>NonNullChecker</em>, a checker to detect possible null-pointer violations at compile time, and <em>NonNullInference</em>, an inferencer to automatically annotate legacy code with nullness annotations.</p>
+<!--<p>The latest distribution of the tools is available at <a class="external-link" href="http://builds.jastadd.org/NonNullTools/latest">
+http://builds.jastadd.org/NonNullTools/latest</a> and older versions are available at <a class="external-link" href="http://builds.jastadd.org/NonNullTools">http://builds.jastadd.org/NonNullTools</a>&nbsp;</p>-->
+<h3>NonNullChecker</h3>
+
+<p>The non-null checker relies on type annotations to detect possible null-pointer violations. Consider the code snippet below:</p>
+<blockquote>
+  <pre>class C {
+&nbsp;   void test() { }
+&nbsp;   public static void main(String[] args) {
+&nbsp;&nbsp;&nbsp;     @NonNull C c1 = new C(); // c1 can only hold non-null values
+&nbsp;&nbsp;&nbsp;     C c2 = null; // c2 can hold possibly-null values
+&nbsp;&nbsp;&nbsp;     c1.test(); // ok: c1 can not be null
+&nbsp;&nbsp;&nbsp;     c2.test(); // error: c2 may be null and the invocation may 
+                   //        throw a null pointer exception
+&nbsp;&nbsp;&nbsp;     c1 = c2; // error: a non-null variable may not be assigned a 
+                 //        possibly null value
+
+&nbsp;&nbsp;&nbsp;     c2 = c1; // ok: a possibly-null variable may be assigned a 
+                 //     non-null value
+&nbsp;&nbsp;&nbsp;     if(c2 != null) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;       c1 = c2; // ok: an explicit comparison to null acts as a
+                     //     safe cast as long as there are no possibly
+                     //     null assignments in the block
+&nbsp;&nbsp;&nbsp;     }
+&nbsp;   }
+}</pre>
+</blockquote>
+<p>If we run the above program through the non-null checker we get the following output:</p>
+<blockquote>
+  <pre>&gt; java -jar JavaNonNullChecker.jar C.java
+Errors:
+C.java:7:
+  Semantic Error: qualifier c2 may be null
+C.java:9:
+  Semantic Error: can not assign c1 of type C- a value of type C
+</pre>
+</blockquote>
+<p>The same program can be compiled using a normal Java compiler, but then the possible null-pointer violations would not be detected.</p>
+
+<h3>NonNullInference</h3>
+<p>We also provide a non-null inferencer that takes a Java program without nullness annotations and infers some annotations. The annotated code can then be further annotated manually to improve the detection of possible null-pointer violations. The inferencer takes existing annotations into account, so it can be run on partially annotated code to automatically infer more annotations. Consider the following example:</p>
+<blockquote>
+  <pre>&gt; cat C.java
+class C {
+    void v() { }
+    public static void main(String[] args) {
+        C c1 = new C();
+        C c2 = null;
+        c2 = c1;
+        c1.v();
+        c2.v();
+        if(c2 != null) {
+            c1 = c2;
+        }
+    }
+}
+&gt; java -jar JavaNonNullInferencer.jar -test C.java
+class C {
+    void v() { }
+    public static void main(@NonNull String[] args) {
+        @NonNull C c1 = new C();
+        C c2 = null;
+        c2 = c1;
+        c1.v();
+        c2.v();
+        if(c2 != null) {
+            c1 = c2;
+        }
+    }
+}</pre>
+</blockquote>
+<p>The tool detects that the local variable <em>c1</em> will never hold a null value and therefore annotates it with <em>@NonNull</em>. We think it is desirable to have as many variables non-null as possible and therefore annotates parameters as being non-null if there are no calls where they are possibly-null. That is the reason why the <em>args</em> parameter in <em>main</em> is annotated with <em>@NonNull</em>. There are still possible-null pointer violations in the program, e.g., the invocation of <em>v()</em> on <em>c2</em>. Such errors will be detected if we run the annotated source file through the checker as described previously.</p>
+<p>The analysis is a whole program analysis so the tool should preferably process a complete project at a time rather than individual source files. The<em> '-test' </em>option instructs the tool to emit the annotated source code to standard output. Otherwise, the tool will generate annotated source files in a folder named <em>'inferred'</em>. The name of the target folder can be changed using the option <em>'-d'</em>. Further details on command line options are available using <em>-help</em> option.</p>
+<h3>Limitations</h3>
+<p>The inferencer does not infer non-nullness for array elements but only for the array itself. <em>@NonNull String[]</em> is thus a non-null reference to an array where the elements are possibly-null, and this is supported by the current tools. <em>String[@NonNull] </em>is a possibly-null reference to an array where each 
+element is <br>non-null which is <em>not</em> supported by the current tools.
+<br>
+<br>The inferencer wants to infer as many non-null valued references as 
+possible.
+If a method is not called it will therefore constrain the parameter 
+types to be
+non-null. This is why we need to do a whole-program analysis when inferring annotations. If we process a project class by class most method 
+arguments would
+be non-null which would cause a lot of errors when later checking another 
+class that uses that class.<br></p>
+<p>There may still be possible null-pointer violations in the automatically annotated code. Consider the following example. The analysis can not determine the value 
+of <em>b</em> and the reference <em>o</em> must therefore be possibly null. There is thus no way of
+preventing the possible null-pointer dereference when calling <em>toString()</em> on <em>o</em>.
+If we run the checker on the annotated code we should thus get an error 
+that we
+are trying to dereference a possibly null valued reference. Such errors 
+can not
+completely be eliminated unless the analysis is exact, in which case we 
+would
+not need anotations at all. The normal usage would be to manually guard such
+dereferences by an explicit null check before invoking the method. <br></p>
+<blockquote>
+  <pre>String v(boolean b) {
+&nbsp;  Object o = b ? new Object() : null;
+&nbsp;  String s = o.toString(); // possible null-pointer dereference
+&nbsp;  return s;
+}</pre>
+</blockquote>
+
+
+<h3>Further details<br></h3>
+<p>
+  The following paper describes how JastAddJ is extended with NonNull type checking and inferencing:
+</p>
+<blockquote>
+  <p>T. Ekman, G. Hedin: <a href="http://dx.doi.org/10.5381/jot.2007.6.9.a23"><strong>Pluggable checking and inferencing of non-null types for Java</strong></a>. Journal of Object Technology, Vol. 6, No. 9, pages 455-475. Special Issue: TOOLS EUROPE 2007, October 2007.</p>
+</blockquote>
+<p>
+The work by Fähndrich and Leino is available in:</p>
+<blockquote>
+  <p>Manuel Fähndrich and Rustan Leino, <strong><a href="http://doi.acm.org/10.1145/949305.949332">Declaring and Checking Non-Null Types in an Object-Oriented Language</a></strong>, <em>Proceedings of the 18th ACM Conference on Object-Oriented Programming Systems, Languages,
+    and Applications (OOPSLA'03)</em>, Anaheim, CA, October 2003<em>.</em><a href="http://research.microsoft.com/~maf/Papers/non-null.pdf"></a></p>
+</blockquote>
+<h2>Source code<br></h2>
+<p>The tools are built as extensions to JastAddJ, the JastAdd Extensible Java Compiler. See <a href="http://jastadd.org">jastadd.org</a> for information about the  repositories for  JastAddJ and the extensions.</p>
+<h3>Check out</h3>
+<ul type="none">
+  <li>Check out the source code for <em>JastAddJ</em></li>
+  <li>Check out the source code for the JastAddJ extension <em>JSR308</em> in a sibling directory</li>
+  <li>Check out the source code for the JastAddJ extension <em>NonNullChecker</em> in a sibling directory</li>
+  <li>Check out the source code for the JastAddJ extension <em>NonNullInference</em> in a sibling directory</li>
+</ul>
+<p><strong>Build</strong></p>
+<p>There are separate ant targets for building the tools, running tests, generating runnable jars, and source jars. E.g.:</p>
+<blockquote>
+  <pre>&gt; cd NonNullInference
+&gt; ant 
+&gt; ant test
+
+&gt; ant jar
+&gt; ant source
+</pre>
+</blockquote>
+<h3>Tests<br>
+</h3>
+<ul type="none"><li>There is an ant target named <em>test</em> which executes a test suite for each tool<br></li><li><em>RunTests.java</em> is a test harness which collects and executes all test cases found in the test folder.</li><li>Each test is simply a <em>.java</em> file and a corresponding <em>.result</em> file holding the expected result. 
+  </ul>
+<h3>Variants</h3>
+<p>The build file build.xml builds each tool for Java 5, and including the JSR308 extension. Two additional build scripts support the following variants:</p>
+<ul>
+  <li><em>build5.xml</em>, for building the tool for Java 5, but excluding the JSR308 extension.</li>
+  <li><em>build1.4.xml</em>, for building the tool for  Java 1.4 only, and  excluding the JSR308 extension.</li>
+</ul>
+<h3></h3>
+<p>&nbsp;  </p>
+</body>
+</html>
+

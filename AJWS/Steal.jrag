@@ -1,0 +1,580 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect Steal {
+
+  public void SyncStealBlock.toString(StringBuffer s) {
+    // If the child block is of StealBlock type then don't perform the
+    // try-catch block code printing. It will be done from inside the SetalBlock
+    // to help print the cases where there are AssignExprs returning
+    // values, which needs to be stored as partial results.
+    if(!(getBlock().getChild(0).getChild(0) instanceof StealBlock)) {
+      s.append(indent());
+      s.append("try {");
+      getBlock().toString(s);
+      s.append(indent());
+      s.append("org.jikesrvm.scheduler.WS.finish();");
+      s.append(indent());
+      s.append("} catch(org.jikesrvm.scheduler.WS.Finish _$$f) {}");
+    }
+    else {
+      // When there is StealBlock inside SyncStealBlock, then there
+      // cannot be any other statements inside the SyncStealBlock.
+      if(getBlock().getChild(0).getNumChild() != 1) {
+        throw new Error("Semantic Error(Line "+getBlock().sourceLineNumber()+"): This finish block contains a steal block, hence no other type of statements should be included");
+      }
+      getBlock().toString(s);
+    }
+  }
+
+  refine PrettyPrint
+  public void ThisAccess.toString(StringBuffer s) {
+    s.append(getID());
+  }
+  
+  public void StealBlock.toString(StringBuffer s) {
+  	final boolean atomicAccessStatus = hostType().atomicAccessAllowed;
+  	hostType().atomicAccessAllowed = false;
+    hostType().insideStealBlock = true;
+    s.append(indent());
+    // get children of this StealBlock
+    final List stmtList = (List) getBlock().getChild(0);
+	
+	// Check if my parent is a SyncStealBlock. If yes,
+	// then some of the child stmts may return variables
+	// which will have to be stored as partial results.
+	
+	final boolean enclosedWithSyncStealBlock = getParent().getParent().getParent() instanceof SyncStealBlock;
+	boolean returningExprs = false;
+	boolean finishFirstBlock = false;
+	java.util.Map<Integer, Access> retVarMap = new java.util.HashMap<Integer, Access>();
+	// Its an error to return results from any child stmt, when
+	// this StealBlock is not enclosed inside SyncStealBlock
+	for(int i=0; i<	stmtList.getNumChild(); i++) {
+	  ASTNode node = stmtList.getChild(i);
+	  if(node instanceof ExprStmt) {
+		if(((ExprStmt)node).getExpr() instanceof AssignExpr) {
+		  if(!enclosedWithSyncStealBlock) {
+		    throw new Error("Semantic Error(Line "+node.sourceLineNumber()+"): Without a wrapper sycnsteal, statements inside a steal block cannot return values");
+		  }
+		  returningExprs = true;
+		  if(i+1 == stmtList.getNumChild()) finishFirstBlock = true;
+		}
+      }
+	}	
+		
+	if(enclosedWithSyncStealBlock) {
+	  s.append("try {");
+	}
+	
+	// If the steal block is over a for loop, then the for loop
+	// should be transformed to a divide-n-conquer style method call. However this 
+	// transformation can happen ONLY if the for loop variable is postIncremented in steps of 1 (eg i++).
+	if(stmtList.getChild(0) instanceof ForStmt) {
+	  /*
+	  if(!enclosedWithSyncStealBlock) {
+	    throw new Error("Semantic Error(Line "+stmtList.getChild(0).sourceLineNumber()+"): stealable for-loop should always be inside a finish block"); 
+	  }
+	  */
+	  returningExprs = false;
+	  // There should not be any other statement after the ForStmt in this particular case
+	  if(stmtList.getNumChild() > 1) {
+	    throw new Error("Semantic Error(Line "+stmtList.getChild(1).sourceLineNumber()+"): Only one for-loop allowed in a steal scope. It cannot be followed by any other statement");
+	  }
+	  
+	  ForStmt forStmt = (ForStmt) stmtList.getChild(0);
+	  final boolean divideableFor = forStmt.getCondition() instanceof LTExpr ? (forStmt.getNumUpdateStmt() > 1 ? false : (((ExprStmt)forStmt.getUpdateStmt(0)).getExpr() instanceof PostIncExpr)) : false; 
+	  if(divideableFor) {
+	    java.util.ArrayList<VarAccess> forBodyLocals = forStmt.grabLocals();  
+	    Block forBlock = (Block) forStmt.getStmt();
+	  
+	    // When we are here, this means:
+	    // We should definitely generate the parallel for optimized code
+	    
+		// Directly generate the dcFor() method
+		MethodDecl method = hostType().currentUmbrellaMethod;
+		if(method.divideFor == null) {
+		  method.divideFor = new StringBuffer();
+		}
+		int dcFor_id = hostType().divideForID++;
+		StringBuffer dcFor = method.divideFor;
+		String dcFor_name = "_dcFor$" + dcFor_id;
+		
+		dcFor.append(indent());
+     	method.getModifiers().toString(dcFor);
+    	//method.getTypeAccess().toString(dcFor);
+    	dcFor.append(" void");
+    	dcFor.append(" " + dcFor_name + "(");
+    	
+    	// generate parameters
+    	dcFor.append("int _$lower, int _$upper, int _$sliceNum");
+		// all the local variables inside this parallel for
+		if(forBodyLocals != null && forBodyLocals.size() > 0) {
+			for(int i=0; i<forBodyLocals.size(); i++) {
+				dcFor.append(", ");
+				dcFor.append(forBodyLocals.get(i).type().typeName());
+				dcFor.append(" ");
+				dcFor.append(forBodyLocals.get(i).name());
+			}
+		}
+        dcFor.append(")");
+        
+        // get the exception list
+        java.util.ArrayList<String> exceptionList = forStmt.grabExceptions();
+        if(exceptionList != null && exceptionList.size() > 0) {
+        	dcFor.append(" throws ");
+        	//exceptionList.get(0).toString(dcFor);
+        	dcFor.append(exceptionList.get(0));
+        	for(int x=1; x<exceptionList.size(); x++) {
+        		dcFor.append(", "+exceptionList.get(x));
+        		//exceptionList.get(x).toString(dcFor);
+        	}
+        }
+        
+        // generate the body of the dcFor method
+        dcFor.append(" {");
+        dcFor.append(indent());
+        dcFor.append("final int procs = org.jikesrvm.scheduler.WS.wsProcs;");
+        dcFor.append(indent());
+		dcFor.append("if (_$sliceNum >> 2 < procs) {");
+		dcFor.append(indent());
+		dcFor.append("int var0 = _$lower + _$upper >> 1;");
+		dcFor.append(indent());
+		dcFor.append("int var1 = _$sliceNum << 1;");
+		dcFor.append(indent());
+		dcFor.append("try {");
+		dcFor.append(indent());
+		dcFor.append("org.jikesrvm.scheduler.WS.setFlag();");
+		dcFor.append(indent());
+		dcFor.append(dcFor_name);
+		dcFor.append("(");
+		dcFor.append("_$lower, var0, var1");
+		// rest all paramenters 
+		if(forBodyLocals != null && forBodyLocals.size() > 0) {
+			for(int i=0; i<forBodyLocals.size(); i++) {
+				dcFor.append(", ");
+				dcFor.append(forBodyLocals.get(i).name());
+			}
+		}
+		dcFor.append(");");
+		dcFor.append(indent());
+		dcFor.append("org.jikesrvm.scheduler.WS.join();");
+		dcFor.append(indent());
+		dcFor.append("} catch (org.jikesrvm.scheduler.WS.Continuation c) {}");
+		dcFor.append(indent());
+		dcFor.append(dcFor_name);
+		dcFor.append("(");
+		dcFor.append("var0, _$upper, var1");
+		// rest all paramenters
+		if(forBodyLocals != null && forBodyLocals.size() > 0) {
+			for(int i=0; i<forBodyLocals.size(); i++) {
+				dcFor.append(", ");
+				dcFor.append(forBodyLocals.get(i).name());
+			}
+		}
+		dcFor.append(");");
+		dcFor.append(indent());
+		dcFor.append("} else {");
+		dcFor.append(indent());
+		String forLoopIterator = ((VariableDeclaration)forStmt.getInitStmt(0)).name();
+		dcFor.append("for (int "+forLoopIterator+"=_$lower; "+forLoopIterator+"<_$upper; "+forLoopIterator+"++) {");
+		//StringBuffer temp = hostType().methodPreDeclarationBuff;
+		//hostType().methodPreDeclarationBuff = null;
+		dcFor.append(indent());
+		forStmt.getStmt().toString(dcFor);
+		//hostType().methodPreDeclarationBuff = temp;
+		dcFor.append(indent());
+		dcFor.append("}");
+		dcFor.append(indent());
+		dcFor.append("}");
+		dcFor.append(indent());
+		dcFor.append("}");
+		// Done generating the body of dcFor method. IT will be printed inside the MethodDecl.toString()
+		
+		// Here we just need to call this method dcFor
+		s.append(indent());
+		s.append(dcFor_name);
+		s.append("(");
+		((VariableDeclaration)forStmt.getInitStmt(0)).getInit().toString(s);
+		s.append(", ");
+		LTExpr ltExpr1 = ((LTExpr)forStmt.getCondition());
+        ltExpr1.getRightOperand().toString(s);
+        s.append(", 1");
+        if(forBodyLocals != null && forBodyLocals.size() > 0) {
+			for(int i=0; i<forBodyLocals.size(); i++) {
+				s.append(", ");
+				s.append(forBodyLocals.get(i).name());
+			}
+		}
+        s.append(");");
+	  }
+	  else {
+	    // This is NOT a divideable for loop, hence just make the body of the 
+	    // for loop as stealable i.e. wrap under try-catch blocks for work-stealing.
+	    forStmt.emitCodesWithJavaTCWS(s);
+	  }  
+	}
+	else {
+	  // iterate through all the child stmts and apply work-stealing on them.
+   	  // Only the last statement should be emitted as is.
+	  int loopLimit = stmtList.getNumChild() == 1 ? 1 : stmtList.getNumChild() - 1;
+ 	  for(int i=0; i<loopLimit; i++) {
+	    ASTNode node = stmtList.getChild(i);
+  	    s.append(indent());
+	    s.append("try {");
+	    s.append(indent());
+	    s.append("org.jikesrvm.scheduler.WS.setFlag();");
+	    node.toString(s);
+	    s.append(indent());
+	    s.append("org.jikesrvm.scheduler.WS.join();");
+	    s.append(indent());
+	    s.append("} catch(org.jikesrvm.scheduler.WS.Continuation _$$c) {");
+	    s.append(indent());
+	    s.append("}");
+	    if(returningExprs) {
+	      // Find the returning variable from this expression
+	      if(node instanceof ExprStmt) {
+		    if(((ExprStmt)node).getExpr() instanceof AssignExpr) {
+		      final AssignExpr assignment = (AssignExpr)((ExprStmt)node).getExpr();
+		      if(assignment.getDest() instanceof Access) {
+		        Access access = (Access) assignment.getDest();
+		        retVarMap.put(i, access);
+		        s.append(indent());
+		        s.append("catch(org.jikesrvm.scheduler.WS.Join _$$j) {");
+		        s.append(indent());
+		        s.append("_$$j.finish.addData(");
+		        s.append(i);
+		        s.append(", ");
+		        assignment.getDest().toString(s);
+		        s.append(");");
+		        s.append(indent());
+		        s.append("org.jikesrvm.scheduler.WS.completeJoin();");
+		        s.append(indent());
+		        s.append("}");
+		      }
+		      else {
+		        throw new Error("Semantic Error(Line "+node.sourceLineNumber()+": Unable to find Access Type of LHS of the expression.."); 
+		      }
+		    }
+		  }
+	    }
+	  }	
+	  
+	  if(stmtList.getNumChild() > 1) {
+  	    // the last statement should not be wrapped inside try-catch blocks
+	    final ASTNode lastChild = stmtList.getChild(stmtList.getNumChild()-1);
+	    lastChild.toString(s);
+	    if(returningExprs) {
+	      // Find the returning variable from this expression
+	      if(lastChild instanceof ExprStmt) {
+		    if(((ExprStmt)lastChild).getExpr() instanceof AssignExpr) {
+		      final AssignExpr assignment = (AssignExpr)((ExprStmt)lastChild).getExpr();
+		      if(assignment.getDest() instanceof Access) {
+		        retVarMap.put(stmtList.getNumChild()-1, (Access)assignment.getDest());
+		      }
+		      else {
+		        throw new Error("Semantic Error(Line "+lastChild.sourceLineNumber()+": Unable to find Access Type of LHS of the expression.."); 
+		      }
+		    }
+	  	  }
+	    }
+	  }  
+	}
+	
+	if(enclosedWithSyncStealBlock) {
+	  s.append(indent());
+      s.append("org.jikesrvm.scheduler.WS.finish();");
+      s.append(indent());
+      s.append("} catch(org.jikesrvm.scheduler.WS.Finish _$$f) {");
+	}
+	
+	if(returningExprs) {
+	  s.append(indent());
+      s.append("for(org.jikesrvm.scheduler.WS.FinishData _$$fd: _$$f.data) {");
+      s.append(indent());
+      s.append("switch(_$$fd.key) {");
+	  Iterator iter = retVarMap.keySet().iterator();
+	  while(iter.hasNext()) {
+	    int index = (Integer)iter.next();
+	    String type = null;
+	    if(retVarMap.get(index) instanceof VarAccess) {
+	      VarAccess var = (VarAccess) retVarMap.get(index);
+	      type = (var.decl().type() instanceof PrimitiveType) ? (String)var.decl().type().primitiveClassName() : (String)var.decl().type().name();  
+	    }
+	    else {
+	      Dot dot = (Dot) retVarMap.get(index);
+	      type = (((VarAccess)dot.getRight()).decl().type() instanceof PrimitiveType) ? (String)((VarAccess)dot.getRight()).decl().type().primitiveClassName() : (String)((VarAccess)dot.getRight()).decl().type().name();
+	    }
+	    
+		s.append(indent());
+        s.append("case ");
+        s.append(index);
+        s.append(": ");
+        retVarMap.get(index).toString(s);
+        s.append(" = (");
+        s.append(type);
+        s.append(") _$$fd.value;break;");
+	  }
+	  s.append(indent());
+      s.append("}");
+      s.append(indent());
+      s.append("}");
+      
+      // Emit FinishFirst Block
+      if(finishFirstBlock) {
+        s.append(indent());
+        s.append("}");
+        s.append(indent());
+        s.append("catch(org.jikesrvm.scheduler.WS.FinishFirst _$$ff) {");
+        s.append(indent());
+        s.append("_$$ff.finish.addData(");
+        // get the last element
+        s.append(stmtList.getNumChild()-1);
+        s.append(", ");
+        retVarMap.get(stmtList.getNumChild() - 1).toString(s);
+        s.append(");");
+        s.append(indent());
+        s.append("org.jikesrvm.scheduler.WS.completeFinishFirst();");      
+      }
+	}	
+	
+	if(enclosedWithSyncStealBlock) {
+	  s.append(indent());
+      s.append("}");
+    }
+    
+    hostType().insideStealBlock = false;
+    if(atomicAccessStatus) hostType().atomicAccessAllowed = true;
+  }
+  
+  public void ForStmt.emitCodesWithJavaTCWS(StringBuffer s) {
+    s.append(indent());
+    s.append("for(");
+    if(getNumInitStmt() > 0) {
+      if(getInitStmt(0) instanceof VariableDeclaration) {
+        int minDimension = Integer.MAX_VALUE;
+        for(int i = 0; i < getNumInitStmt(); i++) {
+          VariableDeclaration v = (VariableDeclaration)getInitStmt(i);
+          minDimension = Math.min(minDimension, v.type().dimension());
+        }
+        VariableDeclaration v = (VariableDeclaration)getInitStmt(0);
+        v.getModifiers().toString(s);
+        s.append(v.type().elementType().typeName());
+        for(int i = minDimension; i > 0; i--)
+          s.append("[]");
+
+        for(int i = 0; i < getNumInitStmt(); i++) {
+          if(i != 0)
+            s.append(",");
+          v = (VariableDeclaration)getInitStmt(i);
+          s.append(" " + v.name());
+          for(int j = v.type().dimension() - minDimension; j > 0; j--)
+            s.append("[]");
+          if(v.hasInit()) {
+            s.append(" = ");
+            v.getInit().toString(s);
+          }
+        }
+      }
+      else if(getInitStmt(0) instanceof ExprStmt) {
+        ExprStmt stmt = (ExprStmt)getInitStmt(0);
+        stmt.getExpr().toString(s);
+        for(int i = 1; i < getNumInitStmt(); i++) {
+          s.append(", ");
+          stmt = (ExprStmt)getInitStmt(i);
+          stmt.getExpr().toString(s);
+        }
+      }
+      else {
+        throw new Error("Unexpected initializer in for loop: " + getInitStmt(0));
+      }
+    }
+    
+    s.append("; ");
+    if(hasCondition()) {
+      getCondition().toString(s);
+    }
+    s.append("; ");
+
+    if(getNumUpdateStmt() > 0) {
+      ExprStmt stmt = (ExprStmt)getUpdateStmt(0);
+      stmt.getExpr().toString(s);
+      for(int i = 1; i < getNumUpdateStmt(); i++) {
+        s.append(", ");
+        stmt = (ExprStmt)getUpdateStmt(i);
+        stmt.getExpr().toString(s);
+      }
+    }
+    
+    s.append(") ");
+    
+    // work-stealing part
+    // Wrap the body in try-catch block
+	s.append(indent());
+	s.append("{");
+	s.append(indent());
+	s.append("try {");
+	s.append(indent());
+	s.append("org.jikesrvm.scheduler.WS.setFlag();");
+	// Body of the ForStmt
+    getStmt().toString(s);
+	s.append(indent());
+	s.append("org.jikesrvm.scheduler.WS.join();");
+	s.append(indent());
+	s.append("} catch(org.jikesrvm.scheduler.WS.Continuation _$$c) {");
+	s.append(indent());
+	s.append("}");
+	s.append(indent());
+	s.append("}");
+  }
+  
+  public StringBuffer MethodDecl.divideFor = null;
+  public MethodDecl TypeDecl.currentUmbrellaMethod = null;
+  public int TypeDecl.divideForID = 0;
+  public StringBuffer TypeDecl.methodPreDeclarationBuff = null;
+  
+  refine PrettyPrint
+  public void MethodDecl.toString(StringBuffer s) {
+    String unitforType = getUnitforType();
+    hostType().unitforTypeOnUmbrellaDeclaration = unitforType;
+    boolean atomicsets = hostType().hasAtomicsets() ? true : (unitforType != null);
+    
+    s.append(indent());
+    getModifiers().toString(s);
+    getTypeAccess().toString(s);
+    s.append(" " + name() + "(");
+    if(getNumParameter() > 0) {
+      getParameter(0).toString(s);
+      for(int i = 1; i < getNumParameter(); i++) {
+        s.append(", ");
+        getParameter(i).toString(s);
+      }
+    }
+    s.append(")");
+    if(getNumException() > 0) {
+      s.append(" throws ");
+      getException(0).toString(s);
+      for(int i = 1; i < getNumException(); i++) {
+        s.append(", ");
+        getException(i).toString(s);
+      }
+    }  
+    if(hasBlock()) {
+      hostType().currentUmbrellaMethod = this;
+      divideFor = null;
+        
+      // 1. When there is an atomicset in this class, we generate 
+      // two version of each method (not for the static ones).
+      // 2. The first version can have synchrnization blocks and the
+      // second version is of name method_internal, and cannot have
+      // any synchronization block.
+      // 3. If there is @NotAtomic annotation then there will not be any
+      // synchronization block, and both the version of the method will
+      // always call _internal version (if it exists)
+      // 4. When unitfor type
+      if(!isStatic() && atomicsets) {
+        if(!isNotAtomicType()) {
+          if(unitforType == null) {
+            // Inform Block.java that synhronization blocks can be generated
+            hostType().atomicAccessAllowed = true;
+          }
+        }
+        else {
+          hostType().generateMethodDeclInternalVersion = true;
+        }
+        
+        // 1. If the declaration has any unitfor (@Atomic(L) or @Atomic),
+        // then in this first version of the method: a) locks should be acquired
+        // beforehand; b) synchronization blocks for each lock should be generated;
+        // and c) all the methods associated with this unitfor parameters should 
+        // always be called as _internal version.
+        // 2. No change in rules in the second version of this method (_internal)
+        // specific to unitfor
+        
+        int sync_blocks = 0;
+        if(unitforType != null) { //== 0 || unitforType == 1) {
+          sync_blocks = generateSyncBlocksForUnitfors(s, unitforType);
+        }
+        
+        // Now the declarations first
+        hostType().methodPreDeclarationBuff = new StringBuffer();
+		// Separate buffer to print non VariableDeclaration stmts
+        StringBuffer blockBuffer = new StringBuffer();
+        getBlock().toString(blockBuffer);
+        // Check if there were any declarations
+        if(hostType().methodPreDeclarationBuff.length() > 0) {
+          s.append("{");
+          s.append(hostType().methodPreDeclarationBuff.toString());
+          s.append(indent());
+        }
+        s.append(blockBuffer.toString());
+        if(hostType().methodPreDeclarationBuff.length() > 0) {
+		  // Close the scope opened for moving variable declarations outside the
+          // main body of the method
+          s.append(indent());
+          s.append("}");
+        }
+		hostType().methodPreDeclarationBuff = null;
+		        
+        if(!isNotAtomicType()) {
+          if(unitforType == null) { //2) {
+            // Inform Block.java that synhronization blocks can be generated
+            hostType().atomicAccessAllowed = false;
+          }
+        }
+        else {
+          hostType().generateMethodDeclInternalVersion = false;
+        }
+        // Close the sync blocks which were generted for unitfor accesses
+        if(unitforType != null) {//== 0 || unitforType == 1) {
+          for(int i=0; i<=sync_blocks; i++) {
+            s.append(indent());
+            s.append("}");
+          }
+        }
+      }
+      else {
+        // Do nothing - Just print
+        getBlock().toString(s);
+      }
+    }
+    else {
+      s.append(";");
+    }
+    
+    if(divideFor != null) {
+      s.append(divideFor.toString());
+    }
+    divideFor = null;
+    hostType().currentUmbrellaMethod = null;
+    
+    // generate the internal version if this class has atomicsets
+    // and this method is not a static one
+    if(!isStatic() && atomicsets && !this.hasWorkStealingAccess()) {
+      hostType().generateMethodDeclInternalVersion = true;
+      toString_internal(s);
+      hostType().generateMethodDeclInternalVersion = false;
+    }
+    
+    if(unitforType == null) {
+      // This was set as true inside generateSyncBlocksForUnitfors(s)
+      hostType().globalUnitforForcingInternalVersion = false;
+    }
+    hostType().unitforTypeOnUmbrellaDeclaration = null;
+  }
+}

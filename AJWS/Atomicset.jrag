@@ -1,0 +1,637 @@
+/*
+ *
+ * Vivek Kumar, (vk.aries@gmail.com)
+ * http://vivkumar.github.io/
+ * February 2016
+ *
+ * ----------------------------------------------------------------------------------------
+ * This code is writen as per the description
+ * provided in the following paper:
+ *
+ *  "A Data-Centric Approach to Synchronization",
+ *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
+ *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
+ *
+ * ----------------------------------------------------------------------------------------
+ *
+ */
+
+aspect Atomicset {
+  // Following to make AtomicsetAnnotationDecl a class variable
+  eq AtomicsetAnnotationDecl.isSynthetic() = false;// the new field must be unique otherwise an error occurs
+  syn int AtomicsetAnnotationDecl.size() = 1;
+  syn boolean AtomicsetAnnotationDecl.isEmpty() = false;
+  syn boolean AtomicsetAnnotationDecl.isPublic() = true;
+  syn boolean AtomicsetAnnotationDecl.isPrivate() = false;
+  syn boolean AtomicsetAnnotationDecl.isProtected() = false;
+  syn boolean AtomicsetAnnotationDecl.isStatic() = false;
+  syn boolean AtomicsetAnnotationDecl.isFinal() = false;
+  syn boolean AtomicsetAnnotationDecl.isTransient() = false;
+  syn boolean AtomicsetAnnotationDecl.isVolatile() = false;
+  syn boolean AtomicsetAnnotationDecl.isParameter() = false;
+  syn boolean AtomicsetAnnotationDecl.isClassVariable() = true;
+  syn boolean AtomicsetAnnotationDecl.isInstanceVariable() = true;
+  syn boolean AtomicsetAnnotationDecl.isMethodParameter() = false;
+  syn boolean AtomicsetAnnotationDecl.isConstructorParameter() = false;
+  syn boolean AtomicsetAnnotationDecl.isExceptionHandlerParameter() = false;
+  syn boolean AtomicsetAnnotationDecl.isLocalVariable() = false;
+  syn boolean AtomicsetAnnotationDecl.isBlank() = false;
+  syn String AtomicsetAnnotationDecl.name() = getID();
+
+  public AtomicsetAnnotationDecl TypeDecl.addMemberField(AtomicsetAnnotationDecl f) {
+    addBodyDecl(f);
+    return (AtomicsetAnnotationDecl)getBodyDecl(getNumBodyDecl()-1);
+  }
+  
+  syn lazy boolean AtomicsetAnnotationDecl.accessibleFrom(TypeDecl type) {
+    return true;
+  }
+  
+  // Emit the lock object allocation code  
+  public void AtomicsetAnnotationDecl.toString(StringBuffer s) {
+    s.append(indent());
+    //if(hostType().isInterfaceDecl() || hostType().isAbstract()) {
+    if(hostType().isInterfaceDecl()) {
+      // Nothing to print
+    }
+    else {
+      s.append("protected final OrderedLock _$lock_"+getID()+";");
+    }
+  }
+  
+  private void TypeDecl.addUniqueAtomicsets(Collection dest, Collection source) {
+    for(Iterator iter = source.iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      boolean found = false;
+      for(Iterator iter2 = dest.iterator(); iter2.hasNext(); ) {
+        AtomicsetAnnotationDecl decl2 = (AtomicsetAnnotationDecl)iter2.next();
+        if(decl2.name().equals(decl.name())) {
+          found = true;
+          break;
+        }
+      }
+      if(!found) {
+        dest.add(decl);
+      }
+    }
+  }
+  
+  private Collection TypeDecl.atomicsets_list = new ArrayList();
+  
+  syn lazy Collection TypeDecl.atomicsets_fromSuper() {
+    Collection c = new ArrayList();
+    
+    // case 1.1: isClassDecl
+    if(isClassDecl()) {
+      ClassDecl klass = (ClassDecl) this;
+      if(klass.hasSuperClassAccess()) {
+ 	    Collection xtends = klass.superclass().atomicsets();
+ 	    if(xtends != null) addUniqueAtomicsets(c, xtends);
+      }
+    }
+    
+    // case 1.2: isInterfaceDecl()
+    else if(isInterfaceDecl()) {
+      InterfaceDecl enterface = (InterfaceDecl) this;
+      if(enterface.getNumSuperInterfaceId() > 0) {
+        for(int i = 0; i < enterface.getNumSuperInterfaceId(); i++) {
+          Collection xtends = ((TypeDecl)(enterface.getSuperInterfaceId(i).type())).atomicsets();
+          // Add unique atomicsets
+          if(xtends != null) addUniqueAtomicsets(c, xtends); 
+        }
+      }
+    }
+    
+    return c;
+  }
+  
+  syn lazy Collection TypeDecl.atomicsets_fromImplementedInterfaces() {
+    if(isInterfaceDecl()) return null;
+    
+    Collection c = new ArrayList();
+    ClassDecl klass = (ClassDecl)this;
+    for(int i = 0; i < klass.getNumImplements(); i++) {
+      TypeDecl decl = klass.getImplements(i).type();
+      Collection emplements = decl.atomicsets();
+      if(emplements != null) addUniqueAtomicsets(c, emplements); 
+    }  
+    
+    return c;
+  }
+  
+  syn lazy Collection TypeDecl.atomicsets_fromMyBodyDecl() {
+    Collection c = new ArrayList();
+    for(int i = 0; i < getNumBodyDecl(); i++) {
+      if(getBodyDecl(i) instanceof AtomicsetAnnotationDecl) {
+        AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl) getBodyDecl(i);
+        c.add(decl);
+      }
+    }
+    return c;
+  }
+  
+  syn lazy boolean TypeDecl.globalAtomicity() {
+  	if(hasAtomicsets()) {
+  		for(int i = 0; i < getNumBodyDecl(); i++) {
+  			BodyDecl b = getBodyDecl(i);
+      		if(b instanceof FieldDeclaration) {
+      			FieldDeclaration f = (FieldDeclaration)b;
+      			if(!f.isStatic()) {
+      				if(f.getModifiers().atomicType() != null) return false;
+      			}
+      		}
+  		}
+  		return true;
+  	}
+  	return false;
+  }
+  
+  syn lazy Collection TypeDecl.atomicsets() {
+    // 1. First check the classes / interfaces which "extends"
+    Collection xtends = atomicsets_fromSuper();
+    if(xtends != null) addUniqueAtomicsets(atomicsets_list, xtends);
+    
+    // 2. Now check the implemented interfaces (this is only in case of a ClassDecl and not in InterfaceDecl)
+    Collection emplements = atomicsets_fromImplementedInterfaces();
+    if(emplements != null) addUniqueAtomicsets(atomicsets_list, emplements);
+
+	// 3. Now get the atomicsets declarations from the body of this class
+	Collection Body = atomicsets_fromMyBodyDecl();
+    if(Body != null) addUniqueAtomicsets(atomicsets_list, Body);
+    
+    // 4. If this is an inner class, it should have its own atomicsets, and should also include every entry from the outter class
+    if(isInnerClass()) {
+    	// System.out.println("Inner Class "+hostType().typeName()+" has outter class as "+enclosingType().typeName());
+    	Collection inner = enclosingType().atomicsets();
+    	if(inner != null) addUniqueAtomicsets(atomicsets_list, inner);
+    }
+    
+    return atomicsets_list;
+  }
+  
+  // Error checking code - Semantic error if there 
+  // are multiple atomic sets of same name
+  public AtomicsetAnnotationDecl TypeDecl.lookupAtomicset(AtomicsetAnnotationDecl signature) {
+    for(Iterator iter = atomicsets().iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      if(decl.name().equals(signature.name())) {
+        return decl;
+      }
+    }
+    return null;
+  }
+  
+  public void AtomicsetAnnotationDecl.nameCheck() {
+    super.nameCheck();
+    if(hostType().lookupAtomicset(this) != this) {
+      error("Atomicset " + name() + " is multiply declared in type " + hostType().typeName());
+    }
+  }
+  
+  // general testing function
+  public boolean TypeDecl.hasAtomicsets() {
+    // just to ensure its already computed
+    // re-calling does not hurt as its a lazy function
+    Collection c = atomicsets();
+    return c.size() > 0; 
+  }
+  
+  // If there are atomicset in a class declaration then
+  // it should implement the interface ajws.Atomic
+  refine PrettyPrint
+  public void ClassDecl.toString(StringBuffer s) {
+    TypeDecl t = hostType();
+    s.append(indent());
+    getModifiers().toString(s);
+    s.append("class " + name());
+    if(hasSuperClassAccess()) {
+      s.append(" extends ");
+      getSuperClassAccess().toString(s);
+    }
+    
+    boolean atomicset = t.hasAtomicsets();
+    if(getNumImplements() > 0) {
+      s.append(" implements ");
+      getImplements(0).toString(s);
+      for(int i = 1; i < getNumImplements(); i++) {
+        s.append(", ");
+        getImplements(i).toString(s);
+      }
+      //@TODO: This will be false if this innerclass has its own atomicset and not the one inherited from parent
+      //its just a temporary work-around
+      if(atomicset && !isInnerClass()) {
+        s.append(", ");
+        s.append("ajws.Atomic");
+        atomicset = false;
+      }
+    }
+    //@TODO: This will be false if this innerclass has its own atomicset and not the one inherited from parent
+    //its just a temporary work-around
+    if(atomicset && !isInnerClass()) {
+      s.append(" implements ");
+      s.append("ajws.Atomic");
+    }
+    ppBodyDecls(s);
+  }
+  
+  // If there are atomicsets then the import statement
+  // should also include OrderedLock
+  refine PrettyPrint
+  public void CompilationUnit.toString(StringBuffer s) {
+    try {
+      if(!getPackageDecl().equals("")) {
+        s.append("package " + getPackageDecl() + ";\n");
+      }
+      for(int i = 0; i < getNumImportDecl(); i++) {
+        getImportDecl(i).toString(s);
+      }
+      for(int i = 0; i < getNumTypeDecl(); i++) {
+        if(getTypeDecl(i).hasAtomicsets()) {
+		  s.append(indent());
+          s.append("import ajws.OrderedLock;");		  
+		  break;        
+        }
+      }
+      for(int i = 0; i < getNumTypeDecl(); i++) {
+        getTypeDecl(i).toString(s);
+        s.append("\n");
+      }
+    } catch (NullPointerException e) {
+      System.out.println("Error in compilation unit hosting " + getTypeDecl(0).typeName());
+      System.out.println("<<=================================Printing the partial code translation ===========================>> ");
+      System.out.println(s.toString());
+      System.out.println("<<==================================================================================================>> ");
+      throw e;
+    }
+    catch (StackOverflowError e) {
+      System.out.println("Error in compilation unit hosting " + getTypeDecl(0).typeName());
+      System.out.println("<<=================================Printing the partial code translation ===========================>> ");
+      System.out.println(s.toString());
+      System.out.println("<<==================================================================================================>> ");
+      throw e;
+    }
+    catch (ClassCastException e) {
+      System.out.println("Error in compilation unit hosting " + getTypeDecl(0).typeName());
+      System.out.println("<<=================================Printing the partial code translation ===========================>> ");
+      System.out.println(s.toString());
+      System.out.println("<<==================================================================================================>> ");
+      throw e;
+    }
+  }
+  
+  // if there are atomic sets, then the class should have 
+  // functions specific to OrderedLock
+  
+  private boolean TypeDecl.generateDefConstrWithOrderedLock() {
+    for(Iterator iter = constructors().iterator(); iter.hasNext(); ) {
+      ConstructorDecl decl = (ConstructorDecl)iter.next();
+      if(decl.getNumParameter() > 0) return false;
+    }
+    return true;
+  }
+  
+  private void TypeDecl.toString_OrderedLockBlocks(StringBuffer s, Collection c) {
+    for(Iterator iter = c.iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      s.append(indent());
+      if(isInterfaceDecl()) {
+        s.append("public abstract OrderedLock getLockFor" + decl.name() + "();");
+      }
+      else {
+        s.append("public final OrderedLock getLockFor" + decl.name() + "() {");
+        s.append(indent());
+        s.append("return _$lock_" + decl.name() + ";");
+        s.append(indent());
+        s.append("}");
+          
+        // The overriden method from Atomic.java
+        s.append(indent());
+        s.append("public final OrderedLock getLock() {");
+        s.append(indent());
+        s.append("return this.getLockFor" + decl.name() + "();");
+        s.append(indent());
+        s.append("}");
+        
+        // the lock object
+        s.append(indent());
+		s.append("protected final OrderedLock _$lock_"+decl.getID()+";");  
+      }
+    }
+  }
+  
+  refine PrettyPrint
+  protected void TypeDecl.ppBodyDecls(StringBuffer s) {
+    s.append(" {");
+    if(hasAtomicsets()) {
+      // there can be more than one atomic sets hence one
+      // functions specific to each atomicsets should be generated
+      
+      // 1. If there are any atomicsets in my own body then emit the code
+      //    without any check:
+      Collection body = atomicsets_fromMyBodyDecl();
+      if(body != null) toString_OrderedLockBlocks(s, body);
+      
+      // 2. Now check the superclass . If I am an InterfaceDecl, I should
+      // still print only the getLockFor..() function for all the atomicsets
+      if(isInterfaceDecl()) {
+        Collection emplement = atomicsets_fromSuper();
+        if(emplement != null) {
+          for(Iterator iter = emplement.iterator(); iter.hasNext(); ) {
+            AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+            s.append(indent());
+            s.append("public abstract OrderedLock getLockFor" + decl.name() + "();");
+          } 
+        }
+      }
+      // 3. If this is a class declaration the it should emit the lock blocks
+      // for all the atomicsets from interfaces. But we have to ensure that
+      // these locks are not already emitted in the superclass
+      else if(isClassDecl()) {
+        Collection inherited_nonDeclaredLocks = inheritedNonDeclaredAtomicSetLocks();
+        if(inherited_nonDeclaredLocks.size() > 0) {
+          toString_OrderedLockBlocks(s, inherited_nonDeclaredLocks);
+        }
+      }
+    }
+    for(int i=0; i < getNumBodyDecl(); i++) {
+      if(!(getBodyDecl(i) instanceof AtomicsetAnnotationDecl)) {
+        // as we have already printed the code w.r.t AtomicsetAnnotationDecl
+        getBodyDecl(i).toString(s);
+      }
+    }
+    s.append(indent() + "}");
+  }
+  
+  // if there are atomicset then separate class constructors should 
+  // also be generated
+  
+  private void ConstructorDecl.generateDefaultConstructorForOrderedLock(StringBuffer s) {
+    // 1. First generate the default constructor, which calls the constructor
+    // to initialize the orderedlock
+    TypeDecl hostType = hostType();
+    s.append(indent());
+	s.append("public " + hostType.typeName() + "() {");
+	s.append(indent());
+	s.append("this(");
+	for(Iterator iter = hostType.atomicsets().iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      s.append("new OrderedLock()");
+      if(iter.hasNext()) s.append(", ");
+    }	
+	s.append(");");
+	s.append(indent());
+	s.append("}");
+	
+    // 2. now generate the constructor to allocate orderedlock
+	s.append(indent());
+	s.append("public " + hostType.typeName() + "(");
+	for(Iterator iter = hostType.atomicsets().iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      s.append("OrderedLock " + decl.name());
+      if(iter.hasNext()) s.append(", ");
+    }	
+	s.append(") {");
+	
+	if(hostType.atomicsets_fromMyBodyDecl().size() > 0) {
+	  s.append(indent());
+	  s.append("super();");
+	  for(Iterator iter = hostType.atomicsets().iterator(); iter.hasNext(); ) {
+        AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+        s.append(indent());
+        s.append("_$lock_" + decl.name() + " = " + decl.name() + ";");
+      }
+    }
+    else {
+      s.append(indent());
+	  s.append("super(");
+	  for(Iterator iter = hostType.atomicsets().iterator(); iter.hasNext(); ) {
+        AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+        s.append(decl.name());
+        if(iter.hasNext()) s.append(", ");
+      }
+      s.append(");");
+    }
+    s.append(indent());
+	s.append("}");
+  }
+  
+  // Other normal constructors should also be modified
+  // to include the OrderedLock
+  refine PrettyPrint
+  public void ConstructorDecl.toString(StringBuffer s) {
+  	//@TODO: This will be false if this innerclass has its own atomicset and not the one inherited from parent
+    //its just a temporary work-around
+    if(isDefaultConstructor() && hostType().hasAtomicsets() && !hostType().isInnerClass()) {
+      generateDefaultConstructorForOrderedLock(s);
+      return;
+    }
+    if(isDefaultConstructor()) return;
+    hostType().unitforTypeOnUmbrellaDeclaration = this.getUnitforType();
+    boolean atomicsets = hostType().hasAtomicsets();
+    s.append(indent());
+    getModifiers().toString(s);
+    s.append(name() + "(");
+    if(getNumParameter() > 0) {
+      getParameter(0).toString(s);
+      for(int i = 1; i < getNumParameter(); i++) {
+        s.append(", ");
+        getParameter(i).toString(s);
+      }
+    }
+    s.append(")");
+    if(getNumException() > 0) {
+      s.append(" throws ");
+      getException(0).toString(s);
+      for(int i = 1; i < getNumException(); i++) {
+        s.append(", ");
+        getException(i).toString(s);
+      }
+    }
+   
+    s.append(" {");
+    //@TODO: This will be false if this innerclass has its own atomicset and not the one inherited from parent
+    //its just a temporary work-around
+    if(atomicsets && !hostType().isInnerClass()) {
+      s.append(indent());
+      s.append("this(");
+      if(getNumParameter() > 0) {
+        s.append(getParameter(0).name());
+        for(int i = 1; i < getNumParameter(); i++) {
+          s.append(", ");
+          s.append(getParameter(i).name());
+        }
+        s.append(", ");
+      }
+      for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+        AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+        s.append("new OrderedLock()");
+        if(iter.hasNext()) s.append(", ");
+      }
+      s.append(");");
+    }
+    else {
+      if(hasConstructorInvocation()) {
+        getConstructorInvocation().toString(s);
+      }
+      for(int i = 0; i < getBlock().getNumStmt(); i++) {
+        getBlock().getStmt(i).toString(s);
+      }
+    }
+    s.append(indent());
+    s.append("}");
+    
+    // generate the constructor with the parameter for OrderedLock
+    //@TODO: This will be false if this innerclass has its own atomicset and not the one inherited from parent
+    //its just a temporary work-around
+    if(atomicsets && !hostType().isInnerClass()) toString_internal(s);
+    hostType().unitforTypeOnUmbrellaDeclaration = null;
+  }
+  
+  private void ConstructorDecl.toString_internal(StringBuffer s) {
+    s.append(indent());
+    getModifiers().toString(s);
+    s.append(name() + "(");
+    if(getNumParameter() > 0) {
+      getParameter(0).toString(s);
+      for(int i = 1; i < getNumParameter(); i++) {
+        s.append(", ");
+        getParameter(i).toString(s);
+      }
+      s.append(", ");
+    }
+    for(Iterator iter = hostType().atomicsets().iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      s.append("OrderedLock " + decl.name());
+      if(iter.hasNext()) s.append(", ");
+    }
+    s.append(")");
+    if(getNumException() > 0) {
+      s.append(" throws ");
+      getException(0).toString(s);
+      for(int i = 1; i < getNumException(); i++) {
+        s.append(", ");
+        getException(i).toString(s);
+      }
+    }
+   
+    s.append(" {");
+    // If there are no atomicset lock object in this class body then
+    // and is already declared in the superclass, then we just need to pass
+    // the decl.name() to the super class. hence we will manipulate the
+    // body of the super(...) invocation.
+    StringBuffer cbody = new StringBuffer();
+    if(hasConstructorInvocation()) {
+      getConstructorInvocation().toString(cbody);
+    }
+    else {
+      cbody.append("super();");
+    }
+
+    Collection already_declared_locks = hostType().atomicsets_fromSuper();  
+    if(already_declared_locks.size() > 0) {
+      // manipulate the super(....) or this(...) call
+      // 1. pass the lock object to the super(...)
+      // 2. if there are some other parameters being passed as well, then 
+      //    pass the lock object after inserting a comma.
+      
+      String cbody_asString = cbody.toString();
+      // code to check if there is need to pass comma:
+      // 1. strip all the white spaces / tabs etc
+      cbody_asString = cbody_asString.replaceAll("\\s","");
+      // 2. remove the last two characters: ")" and ";"
+      cbody_asString = cbody_asString.substring(0,cbody_asString.length()-2);
+      // 3. remove the string "super(" or "this("
+      String temp = cbody_asString.replaceAll("super\\(","");
+      temp = temp.replaceAll("this\\(","");
+      // if the length is more than 0, then it means there are parameter
+      // because if there are no parameters then the body would have been "super();"
+      if(temp.length() > 0) {
+        // insert the comma
+        cbody_asString += ", ";
+      }
+      
+      // now get all the locks
+      for(Iterator iter = already_declared_locks.iterator(); iter.hasNext(); ) {
+        AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+        cbody_asString += decl.name();
+        if(iter.hasNext()) {
+          cbody_asString += ", ";
+        }
+      }
+      
+      // close the body
+      cbody_asString += ");";
+      
+      // now emit the code
+      s.append(indent());
+      s.append(cbody_asString);
+    }
+    else {
+      // no manipulation required
+      s.append(cbody.toString());
+    }
+      
+    // emit declarations for atomicsets in my own body
+    Collection lockList = hostType().inheritedNonDeclaredAtomicSetLocks().size() > 0 ? hostType().inheritedNonDeclaredAtomicSetLocks() : hostType().atomicsets_fromMyBodyDecl();
+    for(Iterator iter = lockList.iterator(); iter.hasNext(); ) {
+      AtomicsetAnnotationDecl decl = (AtomicsetAnnotationDecl)iter.next();
+      s.append(indent());
+      s.append("_$lock_" + decl.name() + " = " + decl.name() + ";");
+    }
+    
+    String unitfor = getUnitforLock();
+    if(unitfor != null) {
+      s.append(indent());
+      s.append("synchronized(" + unitfor +") {");
+    }
+    for(int i = 0; i < getBlock().getNumStmt(); i++) {
+      getBlock().getStmt(i).toString(s);
+    }
+    if(unitfor != null) {
+      s.append(indent());
+      s.append("}");
+    }
+    s.append(indent());
+    s.append("}");
+  }
+  
+  // the collection of inherited atomicsets whose lock object I should definitely declare
+  // = emplement - xtends
+  syn lazy Collection TypeDecl.inheritedNonDeclaredAtomicSetLocks() {
+    if(isInterfaceDecl()) return null;
+    
+    Collection emplement = atomicsets_fromImplementedInterfaces();
+    Collection xtends = atomicsets_fromSuper();
+    
+    Collection non_declared_locks = new ArrayList();
+    
+    if(emplement != null) {
+      // lock blocks = emplement - xtends
+      for(Iterator iter1 = emplement.iterator(); iter1.hasNext(); ) {
+        AtomicsetAnnotationDecl decl1 = (AtomicsetAnnotationDecl)iter1.next();
+        boolean found = false;
+        for(Iterator iter2 = xtends.iterator(); iter2.hasNext(); ) {
+          AtomicsetAnnotationDecl decl2 = (AtomicsetAnnotationDecl)iter2.next();
+          if(decl1.name().equals(decl2.name())) {
+            found = true;
+            break;
+          }
+        }
+        if(!found) non_declared_locks.add(decl1);
+      }
+    }
+    return non_declared_locks;
+  }
+  
+  syn lazy String ConstructorDecl.getUnitforLock() {
+    // Now check the method parameters
+    for(int i = 0; i < getNumParameter(); i++) {
+      String unitfor = getParameter(i).getUnitfor();
+      if(unitfor != null) {
+        String lock_object = getParameter(i).name() + ".getLockFor" + unitfor + "()";
+        return lock_object;
+      }
+    }
+    return null; 
+  } 
+}

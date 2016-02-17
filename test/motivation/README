@@ -1,0 +1,66 @@
+/*
+ * Author: Vivek Kumar
+ * http://vivkumar.github.io/
+ */
+
+This directory contains a small motivating example to show how deadlocks can occur in normal 
+Java programming. Further, we also show corresponding example writen in AJWS which will never 
+deadlock. This AJWS version is shown both with Java threading and using work-stealing.
+
+
+(1) Dir: deadlock-reenterantLock-threading
+
+This using Java ReenterantLock for concurrency, which can lead to deadlock
+
+======
+USAGE:
+======
+
+cd deadlock-reenterantLock-threading
+javac Bank.java
+java Bank
+
+(2) Dir: no-deadlock-AJWS-threading
+
+This is using AJWS data-dentric annotations to avoid deadlock and ensuring correctness. 
+
+Subdirs: src (actual source without translation to Java) ; translated (AJWS to Java translation)
+
+======
+USAGE:
+======
+
+(a) Translating AJWS to Java
+cd ../../../AJWS
+ant clean; ant jar	// Build AJWS.jar
+java -classpath . JavaPrettyPrinter ../test/motivation/no-deadlock-AJWS-threading/src/Bank.java &> AJWStoJava.java
+(b) Copy AJWS dependencies
+cp -rf lib/ajws ../test/motivation/no-deadlock-AJWS-threading/src/.
+(c) Compile the translated code
+cd ../test/motivation/no-deadlock-AJWS-threading/src/
+javac AJWStoJava.java
+java AJWStoJava
+
+(3) Dir: no-deadlock-AJWS-ws
+
+This is using AJWS data-dentric annotations and TryCatchWS work-stealing (async-finish construct)
+
+Subdirs: src (actual source without translation to Java) ; translated (AJWS to Java translation)
+
+======
+USAGE:
+======
+
+(a) Translating AJWS to Java
+cd ../../../AJWS
+ant clean; ant jar      // Build AJWS.jar
+java -classpath . JavaPrettyPrinter ../test/motivation/no-deadlock-AJWS-ws/src/Bank.java &> AJWStoJava.java
+(b) Copy AJWS dependencies
+cp -rf lib/ajws ../test/motivation/no-deadlock-AJWS-ws/src/.
+(c) Compile the translated code
+cd ../test/motivation/no-deadlock-AJWS-ws/src/
+javac -classpath /path/to/JikesRVM/build/for/TryCatchWS/jksvm.jar:. AJWStoJava.java
+/path/to/JikesRVM/build/for/TryCatchWS/rvm -Xws:procs=2 -Xws:autoThreads=true AJWStoJava
+(For downloading/building a copy of TryCatchWS, please visit: http://vivkumar.github.io/javatrycatchws.html )
+
+
