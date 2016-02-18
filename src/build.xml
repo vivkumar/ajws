@@ -9,7 +9,7 @@
 <project name="AJWS" default="build">
 
 <!-- location of JastAddJ -->
-<property name="JastAddJ" value="../JastAddJ"/>
+<property name="JastAddJ" value="../support/JastAddJ"/>
 
 <!-- location of Java1.4Frontend -->
 <property name="Java1.4Frontend" value="${JastAddJ}/Java1.4Frontend"/>

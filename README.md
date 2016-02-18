@@ -9,6 +9,7 @@ AJWS
 Please visit http://vivkumar.github.io/ajws.html for details.
 Follow the README inside AJWS and test directories for details on usage
 
+To build, please go inside "src" and follow the README
 
 --------
 JastAdd:
