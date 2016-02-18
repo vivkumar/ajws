@@ -1,7 +1,6 @@
 
 /**
- * Borrowed from HJlib (Habanero-Java library)
- * Original Author: Shams Imam
+ * Borrowed from AJ and Habanero-Java library
  * Modifed by Vivek Kumar
  */
 
