@@ -1,0 +1,10 @@
+To build any version here (default, ajws, sequential), simply go inside the directory and issue:
+ant clean
+ant
+
+The ant will create jars (jmetal.jar, jmetal-seq.jar, jmetal-ws.jar)
+There is an experiment.sh file in each directory to launch a simple experiment
+
+In case of ajws version, the ajws-to-Java translation is done inside directory ajws/gen. 
+To run the experiment.sh inside ajws, you need to build TryCatchWS runtime
+

@@ -1,0 +1,30 @@
+<project name="Jastadd" default="jar">
+    <dirname file="${ant.file.common}" property="common.dir"/>
+    <property name="build.dir" location="bin"/>
+    <property name="class.dir" location="bin/classes"/>
+    <path id="Jastadd.classpath">
+        <pathelement location="${class.dir}"/>
+        <pathelement location="${build.dir}/../gen"/>
+        <pathelement location="${common.dir}/../jars/jksvm.jar"/>
+	<pathelement location="${common.dir}/../jars/junit-4.11.jar"/>
+    </path>
+    <target name="clean">
+        <delete dir="${build.dir}"/>
+        <delete dir="${common.dir}/gen"/>
+	<delete file="${common.dir}/jmetal-ws.jar" failonerror="false" />
+    </target>
+    <target name="jar" depends="compile">
+               <jar jarfile="${common.dir}/jmetal-ws.jar" basedir="${class.dir}" index="yes" compress="yes" />
+    </target>
+    <target name="compile" depends="clean">
+	<exec executable="perl" dir=".">
+		<arg value="createFileList.pl"/>
+	</exec>
+        <mkdir dir="${class.dir}"/>
+        <javac destdir="${class.dir}" includeantruntime="false">
+            <src path="${build.dir}/../gen"/>
+            <classpath refid="Jastadd.classpath"/>
+	    <exclude name="jmetal/core/snippet/Snippet.java"/>
+        </javac>
+    </target>
+</project>

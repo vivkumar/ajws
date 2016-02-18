@@ -1,0 +1,27 @@
+<project name="jmetal" default="jar">
+    <dirname file="${ant.file.common}" property="common.dir"/>
+    <property name="build.dir" location="bin"/>
+    <property name="class.dir" location="bin"/>
+    <!--property name="class.dir" location="bin/classes"/-->
+    <path id="jMetalWS.classpath">
+        <pathelement location="${class.dir}"/>
+        <pathelement location="${common.dir}/src"/>
+	<pathelement location="${common.dir}/../jars/jksvm.jar"/>
+        <pathelement location="${common.dir}/../jars/junit-4.11.jar"/>
+    </path>
+    <target name="clean">
+        <delete dir="${build.dir}"/>
+	<delete file="${common.dir}/jmetal-seq.jar" failonerror="false" />
+    </target>	
+    <target name="jar" depends="compile">
+               <jar jarfile="${common.dir}/jmetal-seq.jar" basedir="${class.dir}" index="yes" compress="yes" />
+    </target>
+    <target name="compile" depends="clean">
+        <mkdir dir="${class.dir}"/>
+        <javac destdir="${class.dir}" includeantruntime="false">
+            <src path="src"/>
+            <classpath refid="jMetalWS.classpath"/>
+	    <exclude name="jmetal/core/snippet/Snippet.java"/>
+        </javac>
+    </target>
+</project>
