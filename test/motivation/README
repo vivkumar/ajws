@@ -31,7 +31,7 @@ USAGE:
 ======
 
 (a) Translating AJWS to Java
-cd ../../../AJWS
+cd ../../../src
 ant clean; ant jar	// Build AJWS.jar
 java -classpath . JavaPrettyPrinter ../test/motivation/no-deadlock-AJWS-threading/src/Bank.java &> AJWStoJava.java
 (b) Copy AJWS dependencies
@@ -52,7 +52,7 @@ USAGE:
 ======
 
 (a) Translating AJWS to Java
-cd ../../../AJWS
+cd ../../../src
 ant clean; ant jar      // Build AJWS.jar
 java -classpath . JavaPrettyPrinter ../test/motivation/no-deadlock-AJWS-ws/src/Bank.java &> AJWStoJava.java
 (b) Copy AJWS dependencies

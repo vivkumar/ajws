@@ -10,7 +10,7 @@ USAGE:
 ======
 
 (a) Translating AJWS to Java
-cd ../../AJWS
+cd ../../src
 ant clean; ant jar      // Build AJWS.jar
 java -classpath . JavaPrettyPrinter ../test/misc/NQueens.java &> AJWStoJava.java
 (b) Copy AJWS dependencies
