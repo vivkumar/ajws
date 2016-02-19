@@ -1,0 +1,5 @@
+To build any test case in this directory, first the AJWS.jar should be created.
+
+cd ../src
+ant clean;
+ant jar
