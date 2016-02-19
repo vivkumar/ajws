@@ -1,0 +1,10 @@
+This is Default version of jMetal
+
+To build:
+
+ant clean
+ant
+
+To run benchmark:
+./experiment.sh <threads>
+

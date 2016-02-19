@@ -1,6 +1,5 @@
-JIKESRVM=~/vivek_work/work-stealing/rvm/production_base/rvm
-OUTDIR=~/vivek_work/work-stealing/jastadd/sourceforge/jmetal/results
-TOPDIR=~/vivek_work/work-stealing/jastadd/sourceforge/jmetal
+PWD=`pwd`
+OUTDIR=$PWD/results
 ####################################################
 ####################################################
 if [ $# -lt 1 ]
@@ -11,4 +10,4 @@ fi
 
 name="jmetal.experiments.studies.StandardStudy"
 
-$JIKESRVM -X:availableProcessors=$1 -Xms921M -Dout.dir=$OUTDIR -X:gc:threads=1 -cp ./jmetal.jar $name $1 $2
+java -Dout.dir=$OUTDIR -cp ./jmetal.jar $name $1

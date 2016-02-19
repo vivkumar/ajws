@@ -1,0 +1,10 @@
+This is Sequential version of jMetal
+
+To build:
+
+ant clean
+ant
+
+To run benchmark:
+./experiment.sh
+

@@ -129,27 +129,11 @@ public class StandardStudy extends Experiment {
 
 		exp.initExperiment();
 
-		final int inner = 1;
-		final int outter = 6;
-		final long start = System.nanoTime();
-		int iter=0;
-		for(int i=0; i<outter; i++) {
-			if(i+1 == outter) {
-				System.out.println("Jikes RVM MMTk Harness Started...");
-				org.mmtk.plan.Plan.harnessBegin();
-			}
-			for(int j=0; j<inner; j++) {
-				System.out.println("Iteration ---------> "+iter++);
-				final long s = System.nanoTime();
-				// Run the experiments
-				exp.runExperiment(threads) ;
-				final double d = (((double)(System.nanoTime() - s))/((double)(1.0E9))) * 1000;
-				System.out.printf("Time = %d msec \n",(int)d);
-			}
-		}
-		org.mmtk.plan.Plan.harnessEnd();
-		final double duration = (((double)(System.nanoTime() - start))/((double)(1.0E9))) * 1000;
-		System.out.printf("===== JMetal PASSED in %d msec =====\n",(int)duration);
+		final long s = System.nanoTime();
+		// Run the experiments
+		exp.runExperiment(threads) ;
+		final double d = (((double)(System.nanoTime() - s))/((double)(1.0E9))) * 1000;
+		System.out.printf("Time = %d msec \n",(int)d);
 	} // main
 } // StandardStudy
 

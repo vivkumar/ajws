@@ -1,6 +1,6 @@
 JIKESRVM=~/vivek_work/work-stealing/rvm/production_ws/rvm
-OUTDIR=~/vivek_work/work-stealing/jastadd/sourceforge/jmetal/results
-TOPDIR=~/vivek_work/work-stealing/jastadd/sourceforge/jmetal
+PWD=`pwd`
+OUTDIR=$PWD/results
 ####################################################
 ####################################################
 if [ $# -lt 1 ]
