@@ -1,0 +1,10 @@
+This is sequential (default) version of SJXP
+
+To build:
+
+ant clean
+ant
+
+To run benchmark:
+./experiment.sh
+

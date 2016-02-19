@@ -1,0 +1,10 @@
+This is AJWS version of SJXP
+
+To build:
+
+ant clean
+ant
+
+To run benchmark:
+./experiment.sh <NUMBER OF WS_WORKERS"
+

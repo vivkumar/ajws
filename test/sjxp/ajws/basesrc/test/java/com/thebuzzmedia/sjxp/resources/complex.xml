@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<!--
+	COMPLEX - Contains character data, attribute values, namespace-qualified
+	tags as well as namespace-qualified attributes. 
+ -->
+
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:slash="http://purl.org/rss/1.0/modules/slash/" xmlns:taxo="http://purl.org/rss/1.0/modules/taxonomy/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:syn="http://purl.org/rss/1.0/modules/syndication/" xmlns:admin="http://webns.net/mvcb/" xmlns:feedburner="http://rssnamespace.org/feedburner/ext/1.0">
+
+<channel rdf:about="http://slashdot.org/">
+<title>Slashdot</title>
+<link>http://slashdot.org/</link>
+<description>News for nerds, stuff that matters</description>
+<dc:language>en-us</dc:language>
+<dc:rights>Copyright 1997-2010, Geeknet, Inc.  All Rights Reserved.</dc:rights>
+<dc:date>2011-02-21T23:30:16+00:00</dc:date>
+<dc:publisher>Geeknet, Inc.</dc:publisher>
+<dc:creator>help@slashdot.org</dc:creator>
+<dc:subject>Technology</dc:subject>
+<syn:updatePeriod>hourly</syn:updatePeriod>
+<syn:updateFrequency>1</syn:updateFrequency>
+<syn:updateBase>1970-01-01T00:00+00:00</syn:updateBase>
+<items>
+ <rdf:Seq>
+  <rdf:li rdf:resource="http://news.slashdot.org/story/11/02/21/2210212/Anonymous-Denies-Targeting-Westboro-Baptist-Church?from=rss" />
+  <rdf:li rdf:resource="http://ask.slashdot.org/story/11/02/21/215258/Ask-Slashdot-Is-There-a-War-Against-Small-Mail-Servers?from=rss" />
+  <rdf:li rdf:resource="http://news.slashdot.org/story/11/02/21/2058243/Physicists-Build-Bigger-Bottles-For-Antimatter?from=rss" />
+ </rdf:Seq>
+</items>
+<image rdf:resource="http://a.fsdn.com/sd/topics/topicslashdot.gif" />
+<textinput rdf:resource="http://slashdot.org/search.pl" />
+<atom10:link xmlns:atom10="http://www.w3.org/2005/Atom" rel="self" type="application/rdf+xml" href="http://rss.slashdot.org/Slashdot/slashdot" /><feedburner:info uri="slashdot/slashdot" /><atom10:link xmlns:atom10="http://www.w3.org/2005/Atom" rel="hub" href="http://pubsubhubbub.appspot.com/" /></channel>
+
+<image rdf:about="http://a.fsdn.com/sd/topics/topicslashdot.gif">
+<title>Slashdot</title>
+<url>http://a.fsdn.com/sd/topics/topicslashdot.gif</url>
+<link>http://slashdot.org/</link>
+</image>
+
+<item rdf:about="http://news.slashdot.org/story/11/02/21/2210212/Anonymous-Denies-Targeting-Westboro-Baptist-Church?from=rss">
+<title>Anonymous Denies Targeting Westboro Baptist Church</title>
+<link>http://rss.slashdot.org/~r/Slashdot/slashdot/~3/EpOw1Rw3ZWw/Anonymous-Denies-Targeting-Westboro-Baptist-Church</link>
+<description>lenwood writes "Last week we discussed news that the hacking group Anonymous was staging an attack against Fred Phelps' Westboro Baptist Church. It turns out that this was a publicity stunt staged by WBC themselves. Anonymous issued a press release disassociating themselves from this."&lt;p&gt;&lt;a href="http://www.facebook.com/sharer.php?u=http%3A%2F%2Fnews.slashdot.org%2Fstory%2F11%2F02%2F21%2F2210212%2FAnonymous-Denies-Targeting-Westboro-Baptist-Church%3Ffrom%3Dfb" target="_blank" title="Share on Facebook"&gt;&lt;img src="http://a.fsdn.com/sd/facebook_icon_large.png"&gt;&lt;/a&gt;
+   
+      &lt;a href="http://twitter.com/home?status=Anonymous+Denies+Targeting+Westboro+Baptist+Church%3A+http%3A%2F%2Fbit.ly%2Ff9gv3O" target="_blank" title="Share on Twitter"&gt;&lt;img src="http://a.fsdn.com/sd/twitter_icon_large.png"&gt;&lt;/a&gt;&lt;/p&gt;&lt;p&gt;&lt;a href="http://news.slashdot.org/story/11/02/21/2210212/Anonymous-Denies-Targeting-Westboro-Baptist-Church?from=rss"&gt;Read more of this story&lt;/a&gt; at Slashdot.&lt;/p&gt;&lt;iframe src="http://slashdot.org/slashdot-it.pl?op=discuss&amp;amp;id=2005954&amp;amp;smallembed=1" style="height: 300px; width: 100%; border: none;"&gt;&lt;/iframe&gt;
+&lt;p&gt;&lt;a href="http://feedads.g.doubleclick.net/~at/hpJ-tThGse2lh4ZRmGRQ_UCfDLY/0/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/hpJ-tThGse2lh4ZRmGRQ_UCfDLY/0/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;br/&gt;
+&lt;a href="http://feedads.g.doubleclick.net/~at/hpJ-tThGse2lh4ZRmGRQ_UCfDLY/1/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/hpJ-tThGse2lh4ZRmGRQ_UCfDLY/1/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;/p&gt;&lt;img src="http://feeds.feedburner.com/~r/Slashdot/slashdot/~4/EpOw1Rw3ZWw" height="1" width="1"/&gt;</description>
+<dc:creator>Soulskill</dc:creator>
+<dc:date>2011-02-21T23:24:00+00:00</dc:date>
+<dc:subject>internet</dc:subject>
+<slash:department>listen-to-admiral-ackbar</slash:department>
+<slash:section>news</slash:section>
+<slash:hit_parade>0,0,0,0,0,0,0</slash:hit_parade>
+<feedburner:origLink>http://news.slashdot.org/story/11/02/21/2210212/Anonymous-Denies-Targeting-Westboro-Baptist-Church?from=rss</feedburner:origLink></item>
+
+<item rdf:about="http://ask.slashdot.org/story/11/02/21/215258/Ask-Slashdot-Is-There-a-War-Against-Small-Mail-Servers?from=rss">
+<title>Ask Slashdot: Is There a War Against Small Mail Servers?</title>
+<link>http://rss.slashdot.org/~r/Slashdot/slashdot/~3/mw4-28vwTIM/Ask-Slashdot-Is-There-a-War-Against-Small-Mail-Servers</link>
+<description>softegg writes "My company hosts our own mail server. We have high-speed business connections through Verizon and Comcast. Recently, Verizon and Comcast have been blocking port 25, causing our private mail server to stop functioning. Additionally, a lot of ISPs just started blocking any mail coming from any IP in the address block of cable modems. This caused us to start laundering our mail through a third-party service called DNSExit. Now, McAfee's MAPS anti-spam system tells us they are blocking DNSExit for spam. Essentially, we are finding ourselves increasingly cut off from sending any outgoing mail. What is a small company supposed to do if you want to host your own mail?"&lt;p&gt;&lt;a href="http://www.facebook.com/sharer.php?u=http%3A%2F%2Fask.slashdot.org%2Fstory%2F11%2F02%2F21%2F215258%2FAsk-Slashdot-Is-There-a-War-Against-Small-Mail-Servers%3Ffrom%3Dfb" target="_blank" title="Share on Facebook"&gt;&lt;img src="http://a.fsdn.com/sd/facebook_icon_large.png"&gt;&lt;/a&gt;
+   
+      &lt;a href="http://twitter.com/home?status=Ask+Slashdot%3A+Is+There+a+War+Against+Small+Mail+Servers%3F%3A+http%3A%2F%2Fbit.ly%2FgMu4PC" target="_blank" title="Share on Twitter"&gt;&lt;img src="http://a.fsdn.com/sd/twitter_icon_large.png"&gt;&lt;/a&gt;&lt;/p&gt;&lt;p&gt;&lt;a href="http://ask.slashdot.org/story/11/02/21/215258/Ask-Slashdot-Is-There-a-War-Against-Small-Mail-Servers?from=rss"&gt;Read more of this story&lt;/a&gt; at Slashdot.&lt;/p&gt;&lt;iframe src="http://slashdot.org/slashdot-it.pl?op=discuss&amp;amp;id=2005896&amp;amp;smallembed=1" style="height: 300px; width: 100%; border: none;"&gt;&lt;/iframe&gt;
+&lt;p&gt;&lt;a href="http://feedads.g.doubleclick.net/~at/Ab8jfc7ZsM6SFftOYDCIKp1iwow/0/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/Ab8jfc7ZsM6SFftOYDCIKp1iwow/0/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;br/&gt;
+&lt;a href="http://feedads.g.doubleclick.net/~at/Ab8jfc7ZsM6SFftOYDCIKp1iwow/1/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/Ab8jfc7ZsM6SFftOYDCIKp1iwow/1/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;/p&gt;&lt;img src="http://feeds.feedburner.com/~r/Slashdot/slashdot/~4/mw4-28vwTIM" height="1" width="1"/&gt;</description>
+<dc:creator>Soulskill</dc:creator>
+<dc:date>2011-02-21T22:33:00+00:00</dc:date>
+<dc:subject>communications</dc:subject>
+<slash:department>lazy-spam-prevention</slash:department>
+<slash:section>askslashdot</slash:section>
+<slash:hit_parade>0,0,0,0,0,0,0</slash:hit_parade>
+<feedburner:origLink>http://ask.slashdot.org/story/11/02/21/215258/Ask-Slashdot-Is-There-a-War-Against-Small-Mail-Servers?from=rss</feedburner:origLink></item>
+
+<item rdf:about="http://news.slashdot.org/story/11/02/21/2058243/Physicists-Build-Bigger-Bottles-For-Antimatter?from=rss">
+<title>Physicists Build Bigger 'Bottles' For Antimatter</title>
+<link>http://rss.slashdot.org/~r/Slashdot/slashdot/~3/CLrAxB_J4r4/Physicists-Build-Bigger-Bottles-For-Antimatter</link>
+<description>intellitech writes "Once regarded as the stuff of science fiction, antimatter &amp;mdash; the mirror image of the ordinary matter in our observable universe &amp;mdash; is now the focus of laboratory studies around the world. While physicists routinely produce antimatter with radioisotopes and particle colliders, cooling these antiparticles and containing them for any length of time is another story. Clifford Surko, a professor of physics at UC San Diego, who is constructing what he hopes will be the world's largest antimatter container, said physicists have recently developed new methods to make special states of antimatter in which they can create large clouds of antiparticles, compress them and make specially tailored beams for a variety of uses."&lt;p&gt;&lt;a href="http://www.facebook.com/sharer.php?u=http%3A%2F%2Fnews.slashdot.org%2Fstory%2F11%2F02%2F21%2F2058243%2FPhysicists-Build-Bigger-Bottles-For-Antimatter%3Ffrom%3Dfb" target="_blank" title="Share on Facebook"&gt;&lt;img src="http://a.fsdn.com/sd/facebook_icon_large.png"&gt;&lt;/a&gt;
+   
+      &lt;a href="http://twitter.com/home?status=Physicists+Build+Bigger+'Bottles'+For+Antimatter%3A+http%3A%2F%2Fbit.ly%2Fg3F1Y8" target="_blank" title="Share on Twitter"&gt;&lt;img src="http://a.fsdn.com/sd/twitter_icon_large.png"&gt;&lt;/a&gt;&lt;/p&gt;&lt;p&gt;&lt;a href="http://news.slashdot.org/story/11/02/21/2058243/Physicists-Build-Bigger-Bottles-For-Antimatter?from=rss"&gt;Read more of this story&lt;/a&gt; at Slashdot.&lt;/p&gt;&lt;iframe src="http://slashdot.org/slashdot-it.pl?op=discuss&amp;amp;id=2005892&amp;amp;smallembed=1" style="height: 300px; width: 100%; border: none;"&gt;&lt;/iframe&gt;
+&lt;p&gt;&lt;a href="http://feedads.g.doubleclick.net/~at/q1klZ0vthklTEGWrKWaa492d5fY/0/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/q1klZ0vthklTEGWrKWaa492d5fY/0/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;br/&gt;
+&lt;a href="http://feedads.g.doubleclick.net/~at/q1klZ0vthklTEGWrKWaa492d5fY/1/da"&gt;&lt;img src="http://feedads.g.doubleclick.net/~at/q1klZ0vthklTEGWrKWaa492d5fY/1/di" border="0" ismap="true"&gt;&lt;/img&gt;&lt;/a&gt;&lt;/p&gt;&lt;img src="http://feeds.feedburner.com/~r/Slashdot/slashdot/~4/CLrAxB_J4r4" height="1" width="1"/&gt;</description>
+<dc:creator>Soulskill</dc:creator>
+<dc:date>2011-02-21T21:47:00+00:00</dc:date>
+<dc:subject>news</dc:subject>
+<slash:department>go-big-or-go-home</slash:department>
+<slash:section>news</slash:section>
+<slash:hit_parade>0,0,0,0,0,0,0</slash:hit_parade>
+<feedburner:origLink>http://news.slashdot.org/story/11/02/21/2058243/Physicists-Build-Bigger-Bottles-For-Antimatter?from=rss</feedburner:origLink></item>
+
+<textinput rdf:about="http://slashdot.org/search.pl">
+<title>Search Slashdot</title>
+<description>Search Slashdot stories</description>
+<name>query</name>
+<link>http://slashdot.org/search.pl</link>
+</textinput>
+
+</rdf:RDF>

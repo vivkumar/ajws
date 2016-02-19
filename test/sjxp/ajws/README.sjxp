@@ -1,0 +1,382 @@
+Simple Java XML Parser (SJXP) for any Java Platform including Android.
+http://www.thebuzzmedia.com/software/simple-java-xml-parser-sjxp/
+
+
+Changelog
+---------
+2.2
+	* Fixed potential performance issue where internal XMLParser.Location.clear()
+	method wasn't clearing the Integer hashCodeCache instance between parse() 
+	calls. This had the potential to degrade parsing performance if a lot of
+	different kinds of XML were parsed, leading to many different unique paths
+	and many different unique Integer hashCode's representing each path filling
+	up the cache and never getting cleared.
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/closed#issue/7
+
+2.1
+	* Fixed bug where isStartTag was always true for TAG type rules
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/closed#issue/6
+	
+	* Removed use of enhanced for-loop in code base because it caused a large
+	number of AbstractList$Itr classes to be created for no great reason.
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/closed#issue/5
+
+2.0
+	* MAJOR PERFORMANCE IMPROVEMENT
+	
+	In previous versions of SJXP, the design to match the parser's current 
+	location to any registered IRule's was done by comparing their String path
+	values. It was a straight forward and simple design, unfortunately under the
+	microscope of HPROF, it was revealed that running the "Benchmark" class in
+	it's entirety, was leading to something like 85mb of garbage String and char[]
+	objects being created as well as taking up 60% of CPU time.
+	
+	The internal mechanism used to compare locations to IRules was rewritten to
+	use integer hash codes and the memory and CPU reduction has been unbelievable.
+	
+	Memory usage and performance are increased drastically in this release on all
+	platforms (especially good for Android).
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/4
+
+	* New IRule.Type.TAG type is defined which allows rules to be called when
+	START and END tag events occur without the overhead of parsing data from the
+	underlying XML stream. This is valuable when you want to examine (e.g. count
+	elements) the XML content without actually parsing data out of it.
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/closed#issue/3
+	
+	* Support for passing through a user-object from XMLParser to the IRule 
+	handlers was added. Given that in almost every parsing case *something* needs
+	to be done with the parsed value (processed, stored, etc.) you almost always
+	want to have access to some sort of DAO inside of your IRule handlers; that
+	is exactly what the user-object can be now.
+	
+	A truncated but quick example looks like this:
+	DBStore store = // some DAO creation
+	XMLParser<DBStore> parser = new XMLParser<DBStore>();
+	parser.parse(xmlInputStream, store);
+	
+	Then in the IRule handler code your "user object" object is the passed-through
+	store object that you can use to store the parsed value. This is just an
+	example, it can be anything.
+	https://github.com/thebuzzmedia/simple-java-xml-parser/issues/closed#issue/1
+
+1.1
+	* Initial public release.
+
+
+License
+-------
+This library is released under the Apache 2 License. See LICENSE.
+
+
+Description
+-----------
+A very small (4 classes) abstraction layer that sits on top of the XML Pull 
+Parser spec (http://xmlpull.org/) to provide a namespace-capable XML Parser with
+the ease-of-use of XPath with the performance of a native pull parser.
+
+SJXP was designed to work on any Java platform, including Android 1.5+.
+
+This library supports parsing 2 types of data from an XML source:
+* Character data (text between tags)
+* Attribute values
+
+Parsing rules (IRule instances) are defined as a series of XPath-esque 
+"location paths" pointing at elements or attribute names, for example the 
+following rule would point at the <title> tag inside the <item> tag of an RSS 
+feed:
+/rss/channel/item/title
+
+Additionally, the library supports parsing namespace-qualified entities using a
+simple [] notation with the namespace's URI, for example:
+/rss/channel/item/[http://purl.org/dc/elements/1.1/]creator
+
+Where the "creator" tag is defined as <dc:creator> inside of the RSS feed, and
+the "dc" prefix is mapped to the "http://purl.org/dc/elements/1.1/" namespace
+URI. 
+
+Supporting the use of the 'prefix' in parse rules is too fragile as plenty of 
+documents in the wild remap "well known" prefixes to their own custom names, 
+like remapping the "dc" (Dublin Core) prefix to "core" or "dublin".
+
+To ensure parsing correctness, this library opted for explicit namespace URI 
+qualifications.
+
+
+Performance
+-----------
+Below are a set of test cases I used to benchmark the parser. I have tried to
+include a range of files so you can most closely predict the performance with
+regards to your intended use.
+
+You can run all these tests yourself, just look for the Benchmark suite inside
+the /src/test folder. 
+
+[Platform]
+* Java 1.6.0_24 on Windows 7 64-bit 
+* Dual Core Intel E6850 processor
+* 8 GB of ram
+
+[Benchmark Files]
+1.	Hacker News Feed - 10 KB, 30 stories
+	news.ycombinator.com/rss
+
+2.	Bugzilla Bug Feed - 132 KB, 128 comments
+	https://bugs.eclipse.org/bugs/show_bug.cgi?id=35973
+
+3.	New York Craigslist Feed - 278 KB, 100 listings
+	http://newyork.craigslist.org/sss/index.rss
+
+4.	TechCrunch Feed - 300 KB, 25 stories
+	feeds.feedburner.com/TechCrunch
+
+5.	Samsung News Feed - 500 KB, 100 stories
+	www.samsung.com/us/function/rss/rssFeedItemList.do?typeCd=NEWS
+
+6.	Eclipse XML Editor Stress Test File - 1.63 MB, 1054 additionallineitem entries
+	https://bugs.eclipse.org/bugs/show_bug.cgi?id=136935
+
+7.	Example Dictionary XML - 10 MB, 41,427 <w> entries
+	http://www.cs.umb.edu/~smimarog/xmlsample/
+
+[Results]
+1. Processed 11061 bytes, parsed 60 XML elements in 7ms
+	ELEMENTS: <title> and <link>
+
+2. Processed 132687 bytes, parsed 258 XML elements in 50ms
+	ELEMENTS: <who name=""> and <thetext>
+
+3. Processed 278771 bytes, parsed 200 XML elements in 61ms
+	ELEMENTS: <item rdf:about=""> and <description>
+	
+4. Processed 303726 bytes, parsed 50 XML elements in 41ms
+	ELEMENTS: <title> and <link>
+	
+5. Processed 724031 bytes, parsed 300 XML elements in 58ms
+	ELEMENTS: <title>, <link> and <description>
+	
+6. Processed 1633334 bytes, parsed 2108 XML elements in 219ms
+	ELEMENT: <quantityandweight> (from <additionalitem>)
+	
+7. Processed 10625983 bytes, parsed 41427 XML elements in 412ms
+	ELEMENT: <w> (from the /dictionary/e/ss/s/qp/q path)
+	
+
+If all these tests are run back-to-back such that the running VM gets
+"warmed up" (as would be the case in an Android or Web application), the 
+performance is roughly 2x what it is from a cold-run.
+
+I ran the tests above from a "cold start" to try and be fair, below is the 
+entire benchmark suite run back-to-back with a warm VM, notice the greatly 
+improved parse times:
+
+1. Processed 11061 bytes, parsed 60 XML elements in 7ms
+2. Processed 132687 bytes, parsed 258 XML elements in 33ms
+3. Processed 278771 bytes, parsed 200 XML elements in 143ms
+4. Processed 303726 bytes, parsed 50 XML elements in 9ms
+5. Processed 724031 bytes, parsed 300 XML elements in 19ms
+6. Processed 1633334 bytes, parsed 2108 XML elements in 120ms
+7. Processed 10625983 bytes, parsed 41427 XML elements in 241ms
+
+
+Example
+-------
+Defining a rule (instance of IRule) is as simple as using the DefaultRule class
+and added an impl for either of the two handler methods (1 for ATTRIBUTES and 1
+for CHARACTERS). 
+
+Here is an in-line example used to parse links from an RSS2 feed:
+
+	new DefaultRule(Type.CHARACTER, "/rss/channel/item/link") {
+		@Override
+		public void handleParsedCharacters(XMLParser parser, String text, Object userObject) {
+			// Do something with the link
+		}
+	}
+	
+You pass that to the XMLParser constructor and you are off to the races parsing
+links out of an RSS feed at the speed of light!
+
+You are certainly welcome to extend IRule yourself, but DefaultRule was written
+with the intent that it could easily be reused in all cases to define rules.
+
+
+How it Works
+------------
+As the underlying XML Pull Parser is parsing the stream of XML content you
+gave it, it keeps track of where it is within the doc by pushing and popping
+the element names (and namespace URIs if available) to a path representation of
+the parser's current location.
+
+NOTE: Individual String objects are not created during this process, it is a
+very tight loop that avoids object creation.
+
+As the parser runs through the file, at every START_TAG, END_TAG and TEXT event, 
+it queries internal Maps of the IRule instances you gave it to see if any IRule's 
+have locationPaths that match its current location. If it does, the List of 
+matching rules are pulled out and processed.
+
+Lookups are immediate, using hash codes of the locations to do the comparisons.
+
+If no rules are matched, the parser moves on, having done no additional parsing
+work at that currently location (e.g. it doesn't even bother to try and pull out
+the values from the underlying stream unless you ask for them).
+
+It is a really simple design, but makes for a much easier API with next to no
+new overhead introduced into the parsing process.
+
+
+Memory/CPU Overhead
+-------------------
+The overhead added to the parsing process is microscopic, but I will outline it 
+here for the performance-minded folks that like reading this stuff (like me):
+
+1. Parser maintains an internal StringBuilder that it uses to represent its 
+current location in the file. As tags are closed and "popped" off the path,
+StringBuilder.setLength() is used to simply adjust the internal length int as
+opposed to causing a System.arraycopy call by using StringBuilder.delete
+
+2. At every START_TAG and TEXT even, an O(1) Map lookup is done for a matching
+path using a hash code of the current location.
+
+3. Memory overhead for the parser's path (typically 128 bytes) and every IRule
+instance that defines a rule for the parser. You are looking at only a few K
+of overhead if you want to include the ClassLoader holding the classes in memory,
+but that is just being pedantic.
+
+
+Runtime Requirements
+--------------------
+If you are deploying this library inside of an app to Android (1.5+), you only 
+need to include the sjxp JAR; it will utilize whatever underlying XML Pull 
+Parser impl is provided by the platform.
+
+If you are deploying this library inside of any other kind of app in a Java
+runtime, be sure to include the xpp3-1.1.4c.jar file that contains the XPP3
+XML Pull Parser implementation (one of the fastest parsers).
+
+
+History
+-------
+This project was born out of 6 months of working on RDF, Atom and RSS 1 & 2
+parsing using XML pull parsing; hand-editing and writing test cases against
+well over 400 test feed documents from around the web in every language.
+
+Common themes arose and many eye-opening experiences of how broken some "valid"
+feed markup can be in addition to how sloppy some specs are with regards to
+required format.
+
+Spending all that time, I saw a lot of common themes and simplifications that
+boiled down to the same fundamental problems over and over again. At the time
+I wrote a fairly complex layer that sat on top of Sun's XML Pull Parser, but
+soon realized that the fundamental problem could be distilled, yet again, down
+to something even simpler and faster.
+
+This library is the final result of all that work.  
+
+
+Troubleshooting
+---------------
+Here are some issues you might run into and what you can do to correct it.
+
+* I get the following exception while parsing:
+	===
+	org.xmlpull.v1.XmlPullParserException: processing instruction can not have 
+	PITarget with reserveld xml name (position: START_DOCUMENT seen \r\n<?xml ... @2:7)
+	===
+	
+	This is a frustratingly vague exception; it is caused by your <?xml..?> 
+	directive at the beginning of your XML file having whitespace before it
+	(meaning it isn't the VERY FIRST thing in the document). If	you remove the 
+	whitespace, you should be fine (apparently it is against the spec to have 
+	any whitespace before it).
+	
+* I am getting no parsed values from an RDF feed doc (like Slashdot.org's feed),
+why?
+
+	This can be unexpected, especially if you haven't spent a lot of time with
+	name spaces and XML docs. The RDF doc *probably* defines a default namespace,
+	in the case of the Slashdot.org feed example, it does. Up in the header, you
+	see "xmlns=", that means every element reference you make to elements that 
+	are not prefixed with another namespace prefix (e.g. <title>) needs to be 
+	qualified with the default namespace URI; something like this:
+	/[http://www.w3.org/1999/02/22-rdf-syntax-ns#]RDF/[http://purl.org/rss/1.0/]channel
+	
+	instead of what you were probably trying:
+	/[http://www.w3.org/1999/02/22-rdf-syntax-ns#]RDF/channel
+	
+	This is because <channel> has an implied namespace of the value defined with
+	"xmlns" up in the doc header. 
+
+* I have my rule setup correctly but I never get a parse value from the parser!
+I have double-checked everything, why?!
+
+	This has hit me a few times while writing test-cases when I was getting
+	copy-paste happy... what you've probably done is copied some IRule handler 
+	code and changed the Type of the rule from ATTRIBUTE to CATEGORY (or visa 
+	versa) and forgotten to implement the OTHER handleXXX method so the default 
+	no-op method in DefaultRule is getting called every time the rule matches.
+	
+* I don't understand the "userObject", what is it suppose to do?
+
+	The "userObject" is not black magic, it is just a brain-dead pass-through
+	mechanism that makes accessing an important class from inside of custom
+	handler code easier.
+	
+	You call XMLParser.parse, and in addition to the stream you want parsed, you
+	pass another object that you want the parser to give back to you when it finds
+	something interesting... maybe like a DAO or cache instance to store the values
+	with.
+	
+	As soon as the XMLParser matches a rule, it calls the handler, and in addition
+	to the parsed values, also hands you the "userObject" you gave IT way back
+	when you started the parse operation.
+	
+	This way your handler code can stay simple without you needing to create
+	custom IRule implementations that take your special class as a constructor
+	argument or something like that.
+	
+	This "pass-through" design of the userObject was chosen because most of the
+	time when you are parsing XML values, after you get the value, you typically
+	want to do something with it, like store it or process it in some way.
+
+* Since Version 2.0 of SJXP I have a lot of generic warnings around my code like
+"XMLParser is a raw type. References to generic type XMLParser<T> should be 
+parameterized" and "DefaultRule is a raw type. References to generic type 
+DefaultRule<T> should be parameterized", why? How do I fix this?
+
+	This is because a new generified type "T" was defined on the XMLParser and
+	IRule class to allow generic typing of the optional userObject that can be
+	passed-through from the parser to the IRule handler now.
+	
+	The userObject is a design paradigm used to make it easy for you to get 
+	access to some custom object, like a DAO, inside of your handler code without
+	needing to implement your own custom IRule that gets a reference to your
+	object through it's constructor. This design allows you to use the 
+	DefaultRule implementation and get all the functionality you need. 
+	
+	If your code doesn't need to make use of the userObject, that means your
+	references to plain XMLParser and IRule will generate warnings about "raw 
+	types". To suppress these, you can use the following annotation on the line, method
+	or entire class that you want to quiet down:
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	
+	If you don't like suppressing warnings, then you can just parameterize the
+	classes with Object, like so:
+	
+	XMLParser<Object> parser = new XMLParser<Object>();
+		 
+
+Reference
+---------
+XML Pull Parsing - http://www.xmlpull.org/
+XML Pull Parsing @ Indiana U - http://www.extreme.indiana.edu/xmlpull-website/
+XPP3 - http://www.extreme.indiana.edu/xgws/xsoap/xpp/mxp1/index.html
+Android XML Pull Parsing - http://developer.android.com/reference/org/xmlpull/v1/package-summary.html
+
+
+Contact
+-------
+If you have questions, comments or bug reports for this software please contact
+us at: software@thebuzzmedia.com

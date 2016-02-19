@@ -1,0 +1,23 @@
+Simple Java XML Parser - Library Dependencies
+---------------------------------------------
+	
+* xpp3-1.1.4c.jar
+	Required:		Any non-Android Java Platform (web service, web app, client, etc.)
+	Not-Required: 	Android application
+
+	This library provides the default implementation for the XML Pull Parsing 
+	spec that SJXP will use. You need this library in your Classpath in all 
+	cases *except* when deploying SJXP inside of an Android	application.
+	
+	The Android runtime already provides this dependency, so when deploying to
+	Android you only need the sjxp JAR by itself as part of your app.
+	
+* junit-4.8.2.jar
+	Required:	Optional 
+
+	As expected, this library is only needed in the classpath at compile or
+	runtime if you plan on working with or running the test cases in the
+	/src/main/test folder.
+	
+	If you aren't working with the test cases, this JAR can be omitted from your
+	deployment.	
