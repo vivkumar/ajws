@@ -1,32 +1,24 @@
-/*
- *
- * Vivek Kumar, (vk.aries@gmail.com)
- * http://vivkumar.github.io/
- * February 2016
- *
- * ----------------------------------------------------------------------------------------
- * This code is writen as per the description
- * provided in the following paper:
- *
- *  "A Data-Centric Approach to Synchronization",
- *  Julian Dolby, Christian Hammer, Daniel Marino, Frank Tip, Mandana Vaziri, and Jan Vitek:
- *  In ACM Trans. Program. Lang. Syst., 34(1): pp. 4:1-4:48, May 2012.
- *			AND 
- * "Work-stealing without the baggage"
- * Vivek Kumar, Daniel Frampton, Steve Blackburn, David Grove, and Olivier Tardieu:
- * In Proceedings of the ACM International Conference on Object Oriented Programming Systems
- * Languages and Applications, OOPSLA '12, pages 297–314, New York, NY, USA, 2012
- * doi: 10.1145/2384616.2384639
- *
+You may use this software for your research. This software is still evolving at The Australian National University. Whenever there is any enhancement or bug fixes, this download page will be updated. As a courtesy to the developers, please cite the following paper while using this software for publications:
 
- *
- * ----------------------------------------------------------------------------------------
- *
- */
+BibTex:
 
--------
-AJWS
--------
+```latex
+@Inproceedings{KumarAJWS2016,
+   author = {Kumar, Vivek and Dolby, Julian and Blackburn, Stephen M.},
+   title = {Integrating Asynchronous Task Parallelism and Data-centric Atomicity},
+   booktitle = {Proceedings of the Principles and Practices of Programming on The Java Platform},
+   series = {PPPJ '16},
+   year = {2016},
+   location = {Lugano, Switzerland},
+   doi = {10.1145/2972206.2972214},
+   publisher = {ACM},
+} 
+
+```
+Or:
+
+V. Kumar, J. Dolby, S. M. Blackburn. Integrating Asynchronous Task Parallelism and Data-centric Atomicity. In Proceedings of the Principles and Practices of Programming on The Java Platform, PPPJ '16, 2016.
+
 
 Please visit http://vivkumar.github.io/ajws.html for details.
 Follow the README inside AJWS and test directories for details on usage
